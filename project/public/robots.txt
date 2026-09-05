@@ -1,0 +1,4 @@
+# Ambiente de demonstração: não indexar enquanto o conteúdo for fictício.
+# Ao publicar o produto real, trocar por "Allow: /" e apontar o sitemap.
+User-agent: *
+Disallow: /

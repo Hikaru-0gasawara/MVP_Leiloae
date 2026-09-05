@@ -8,7 +8,9 @@
   --border-2:  rgba(255,255,255,0.13);
   --text:      #F4F1E8;
   --text-dim:  #B5ADC2;
-  --text-mute: #7C7589;
+  /* Clareado de #7C7589: no antigo, texto de 11,5-12px ficava em 3,4-4,5:1
+     sobre as superfícies escuras — abaixo do mínimo AA (axe: color-contrast). */
+  --text-mute: #938CA0;
   --accent:    #B59FF0;   /* warm violet */
   --accent-2:  #8B6FE8;
   --accent-dim:#3A2E5C;
@@ -40,10 +42,12 @@
   --border-2:  rgba(28,20,40,0.17);
   --text:      #1C1726;
   --text-dim:  #5C5468;
-  --text-mute: #8E8796;
+  /* Escurecido de #8E8796, que chegava a 2,7:1 no tema claro. */
+  --text-mute: #686170;
   --accent-dim:#E7DEFB;
   --accent-ink:#5E4AA8;
-  --success-ink:#1B8A5A;
+  /* Escurecido de #1B8A5A: sobre --success-dim ficava em 3,68:1. */
+  --success-ink:#0A7949;
   --warning-ink:#9A5B0E;
   --danger-ink:#C5332C;
   --hot-ink:   #D33F28;
@@ -55,7 +59,11 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); f
 body { min-height: 100vh; }
 ::selection { background: var(--accent); color: #0C0911; }
 a { color: inherit; text-decoration: none; }
-button { font-family: inherit; cursor: pointer; }
+/* Botão sem `color` próprio herdava o preto do agente de usuário: no tema
+   escuro, o texto dos cards do herói saía preto sobre superfície quase preta
+   (1,17:1). Herdar a cor do contexto é o padrão certo; quem precisa de outra
+   cor continua declarando a sua. */
+button { color: inherit; font-family: inherit; cursor: pointer; }
 input, textarea, select { font-family: inherit; }
 #root { min-height: 100vh; }
 /* Home hero: stack text above the floating card collage on narrower viewports
@@ -110,4 +118,33 @@ input, textarea, select { font-family: inherit; }
 @keyframes leiloe-shimmer {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
+}
+
+/* Acessibilidade: atalho para o conteúdo e foco sempre visível (FRONT-005/007). */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 400;
+  background: var(--accent);
+  color: #15101F;
+  padding: 12px 20px;
+  border-radius: 0 0 12px 0;
+  font-weight: 600;
+  font-size: 14px;
+}
+.skip-link:focus {
+  left: 0;
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

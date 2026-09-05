@@ -1,21 +1,25 @@
 // SAVED / Favoritados — lots the user has hearted.
 import { useMemo } from "react";
-import { LOTS, fmtBRL } from "./data.js";
+import { LOTS } from "./data.js";
+import { formatBRL as fmtBRL, isEnded } from "./domain/auction.js";
+import { useNow } from "./lib/clock.js";
 import { SectionHead, Button, Icon, LotCard } from "./components.jsx";
 import { StatCard } from "./screens.jsx";
 
 export function SavedScreen({ onOpenLot, onBid, onSave, onNavigate, onCategoryChange, density = "regular", lots = LOTS }) {
+  const agora = useNow();
   const saved = useMemo(() => lots.filter(l => l.saved), [lots]);
   const imoveis = saved.filter(l => l.category === "imovel");
   const veiculos = saved.filter(l => l.category === "carro");
 
   // Sum of current bids across saved lots, and how many are ending within 6h.
   const totalValue = saved.reduce((s, l) => s + l.currentBid, 0);
-  const endingSoon = saved.filter(l => (l.endsAt - Date.now()) < 1000 * 60 * 60 * 6).length;
+  const endingSoon = saved.filter(l => !isEnded(l, agora) && (l.endsAt - agora) < 1000 * 60 * 60 * 6).length;
 
   return (
     <div style={{ maxWidth: 1280, margin: "0 auto", padding: "40px 40px 80px", animation: "leiloe-fadein 0.3s ease" }}>
       <SectionHead
+        as="h1"
         overline="Favoritos"
         title="Seus lotes salvos."
         subtitle={

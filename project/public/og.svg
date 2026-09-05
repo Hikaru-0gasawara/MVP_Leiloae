@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#0C0911"/>
+  <rect x="0" y="0" width="1200" height="630" fill="url(#g)" opacity="0.35"/>
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#B59FF0"/><stop offset="1" stop-color="#2A1F45"/>
+  </linearGradient></defs>
+  <text x="80" y="300" font-family="Georgia,serif" font-style="italic" font-size="84" fill="#F4F1E8">Leilo<tspan fill="#B59FF0">aê</tspan></text>
+  <text x="80" y="380" font-family="system-ui,sans-serif" font-size="34" fill="#B5ADC2">Leilão sem juridiquês.</text>
+  <text x="80" y="430" font-family="system-ui,sans-serif" font-size="26" fill="#7C7589">Imóveis e carros abaixo do mercado, com a clareza de um e-commerce.</text>
+</svg>

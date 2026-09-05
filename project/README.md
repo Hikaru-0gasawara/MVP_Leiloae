@@ -3,27 +3,62 @@
 "Leilão sem juridiquês" — marketplace de leilões de imóveis e veículos em São Paulo,
 feito para quem nunca participou de um leilão.
 
-React + Vite. Dados são mockados em `src/data.js` (8 imóveis + 6 veículos, 5 vendedores,
-glossário); não há back-end.
+React + Vite. **Não há back-end**: o catálogo é estático (`src/data.js`) e o estado do
+usuário (favoritos e lances) vive no `localStorage` do navegador. Enquanto for assim,
+a aplicação roda em **modo demonstração** — veja abaixo.
 
 ## Rodando
 
 ```bash
 npm install
-npm run dev      # servidor de desenvolvimento
-npm run build    # build de produção em dist/
-npm run preview  # serve o build
+npm run dev       # servidor de desenvolvimento
+npm run build     # build de produção em dist/
+npm run preview   # serve o build
+
+npm run lint      # ESLint (react-hooks + jsx-a11y)
+npm test          # Vitest (unidade e componente)
+npm run test:e2e  # Playwright (regressão + acessibilidade)
+npm run check     # lint + test + build
 ```
+
+O CI (`.github/workflows/ci.yml`) roda lint, testes, `npm audit` e build em todo push
+e pull request, mais a suíte E2E num job separado.
+
+## Modo demonstração
+
+`VITE_DEMO_MODE` controla a honestidade da interface. O padrão é **ligado**: só fica
+desligado com `VITE_DEMO_MODE=false` explícito. Ligado, a aplicação:
+
+- exibe a faixa fixa de "ambiente de demonstração" (`src/ui/DemoBanner.jsx`);
+- marca as páginas jurídicas como fictícias e não apresenta CNPJ como real;
+- rotula as fotos como ilustrativas;
+- avisa, na caixa de mensagens, que nada é enviado a ninguém.
+
+O formulário de contato só aparece se `VITE_CONTACT_FORM_ENDPOINT` estiver definido;
+sem endpoint, nenhum campo de dado pessoal é renderizado. Copie `.env.example` para
+`.env.local` para configurar canais reais. **Nenhum segredo vai para o código** — tudo
+passa por variáveis de ambiente.
 
 ## Estrutura
 
 | Arquivo | Conteúdo |
 | --- | --- |
-| `src/App.jsx` | Estado global (rota, categoria, tema, lotes, modais) e as rotas |
-| `src/data.js` | Lotes, vendedores, glossário, formatadores e o simulador de custo |
-| `src/nav.jsx` | Header com ticker animado, menu da conta e painel de notificações |
-| `src/components.jsx` | Primitivos compartilhados (Button, Badge, LotCard, Countdown, GlossaryTerm, Icon) |
-| `src/screens.jsx` | Home, tour de iniciante, listagem e Meus lances |
+| `src/domain/auction.js` | **Regras de negócio**: simulador de custo, lance mínimo, incremento por faixa, encerramento, status. Fonte única — as telas não recalculam nada |
+| `src/domain/schedule.js` | Prazos absolutos dos leilões (estáveis entre recargas) |
+| `src/state/userState.js` | Reducer de favoritos e lances, persistência e projeção sobre o catálogo |
+| `src/lib/clock.js` | Relógio único da aplicação (`useNow`) e visibilidade da aba (`usePageVisible`) |
+| `src/lib/config.js` | Configuração por ambiente: modo demonstração, canais de contato |
+| `src/lib/photos.js` | `srcset`/`sizes` por contexto de uso e texto alternativo das fotos |
+| `src/lib/router.js` | Mapeamento rota ↔ URL (deep link e histórico do navegador) |
+| `src/ui/Dialog.jsx` | Diálogo acessível (foco inicial, trap, ESC, devolução do foco) e `useDismissable` |
+| `src/ui/ErrorBoundary.jsx` | Contenção de erro de renderização, com caminho de recuperação |
+| `src/ui/DemoBanner.jsx` | Faixa fixa e aviso local de demonstração |
+| `src/App.jsx` | Estado global, rotas por URL e composição das telas |
+| `src/data.js` | Catálogo (8 imóveis + 6 veículos), vendedores e glossário |
+| `src/nav.jsx` | Header com ticker, painel da conta e notificações |
+| `src/components.jsx` | Primitivos (Button, Badge, LotCard, Countdown, GlossaryTerm, Icon) |
+| `src/screens.jsx` | Home, tour de iniciante e listagem |
+| `src/mybids.jsx` | Meus lances (abas, cobrir lance, cancelamento na janela de 24 h) |
 | `src/lotdetail.jsx` | Página do lote (galeria, abas, simulador) e tela de arremate |
 | `src/bidmodal.jsx` | Modal de lance em 3 passos |
 | `src/compare.jsx` | Barra e modal de comparação (até 4 lotes) |
@@ -31,5 +66,22 @@ npm run preview  # serve o build
 | `src/pages.jsx` | Rodapé e páginas institucionais |
 | `src/index.css` | Tokens de tema (claro/escuro) e keyframes |
 
-Os tokens de cor vivem em `src/index.css`; o tema claro sobrescreve apenas as variáveis
-necessárias em `:root[data-theme="light"]`, e a escolha persiste em `localStorage`.
+## Testes
+
+| Suíte | O que cobre |
+| --- | --- |
+| `src/domain/auction.test.js` | Regras de custo, incremento, lance mínimo, encerramento, status |
+| `src/state/userState.test.js` | Reducer, persistência e projeção do estado do usuário |
+| `src/data.test.js` | Invariantes do catálogo e da agenda |
+| `src/components.test.jsx` | LotCard, BidModal e Meus lances |
+| `src/simulador.test.jsx` | Soma das linhas = total nas quatro telas que simulam custo |
+| `e2e/regressao-auditoria.spec.js` | Um teste por defeito da auditoria, identificado pelo ID |
+| `e2e/acessibilidade.spec.js` | `axe-core` em 9 rotas × 2 temas + os 5 overlays; dispensa por teclado |
+
+A suíte de acessibilidade reprova o build em qualquer violação `serious` ou `critical`.
+
+## Tokens de tema
+
+Vivem em `src/index.css`. O tema claro sobrescreve apenas as variáveis necessárias em
+`:root[data-theme="light"]`, e a escolha persiste em `localStorage`. Os dois temas são
+verificados por contraste no E2E — ao mexer numa cor, rode `npm run test:e2e`.

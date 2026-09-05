@@ -1,9 +1,12 @@
 // Screens: Home, Tour, Listing, My Bids.
-import { useState, useEffect, useMemo } from "react";
-import { GLOSSARY, LOTS, fmtBRL, fmtNum, simulateCost } from "./data.js";
+import { useState, useMemo, useId } from "react";
+import { GLOSSARY, LOTS } from "./data.js";
+import { simulateCost, isEnded, formatBRL as fmtBRL } from "./domain/auction.js";
+import { useNow } from "./lib/clock.js";
 import { Badge, Button, Icon, SectionHead, GlossaryTerm, Countdown, LotCard, LotPhoto } from "./components.jsx";
 import { Wordmark } from "./nav.jsx";
 import { useCompare } from "./state/compareStore.js";
+import { Dialog } from "./ui/Dialog.jsx";
 
 // ============================================================
 // HOME — logged-out landing
@@ -11,7 +14,8 @@ import { useCompare } from "./state/compareStore.js";
 export function HomeScreen({ onNavigate, onTour, onOpenLot, onCategoryChange, onBid, onSave, onOpenPage, lots = LOTS }) {
   const allLots = lots;
   const featured = allLots.filter(l => l.category === "imovel").slice(0, 3);
-  const endingSoon = [...allLots].sort((a, b) => a.endsAt - b.endsAt).slice(0, 3);
+  const agora = useNow();
+  const endingSoon = allLots.filter((l) => !isEnded(l, agora)).sort((a, b) => a.endsAt - b.endsAt).slice(0, 3);
 
   return (
     <div style={{ maxWidth: 1280, margin: "0 auto", padding: "48px 40px 80px", animation: "leiloe-fadein 0.3s ease" }}>
@@ -144,9 +148,9 @@ export function HomeScreen({ onNavigate, onTour, onOpenLot, onCategoryChange, on
       <section style={{ margin: "96px 0" }}>
         <SectionHead overline="Depoimentos" title="Quem já arrematou." subtitle="Três primeiras vezes que deram certo." />
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 18 }}>
-          <Quote text="Primeiro arremate da minha vida. Sem o glossário eu não teria coragem." who="Camila, 29" role="Studio na Mooca" />
-          <Quote text="Comprei um carro 22% abaixo da FIPE. O simulador me deu segurança." who="Rafael, 34" role="Honda Civic 2019" />
-          <Quote text="Atendimento via WhatsApp resolveu em 12 minutos. Outro mundo." who="Marina, 29" role="Apto no Tatuapé" />
+          <Quote text="Primeiro arremate da minha vida. Sem o glossário eu não teria coragem." who="Camila, 29" lote="Studio na Mooca" />
+          <Quote text="Comprei um carro 22% abaixo da FIPE. O simulador me deu segurança." who="Rafael, 34" lote="Honda Civic 2019" />
+          <Quote text="Atendimento via WhatsApp resolveu em 12 minutos. Outro mundo." who="Marina, 29" lote="Apto no Tatuapé" />
         </div>
       </section>
 
@@ -162,13 +166,13 @@ export function HomeScreen({ onNavigate, onTour, onOpenLot, onCategoryChange, on
   );
 }
 
-function Quote({ text, who, role }) {
+function Quote({ text, who, lote }) {
   return (
     <figure style={{ margin: 0, padding: 28, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", display: "flex", flexDirection: "column", gap: 18 }}>
       <span style={{ fontFamily: "var(--serif)", fontSize: 34, lineHeight: 1, color: "var(--accent-ink)" }}>&ldquo;</span>
       <blockquote style={{ margin: 0, fontFamily: "var(--serif)", fontSize: 19, lineHeight: 1.4, letterSpacing: "-0.01em", textWrap: "pretty" }}>{text}</blockquote>
       <figcaption style={{ marginTop: "auto", fontSize: 13, color: "var(--text-mute)" }}>
-        <span style={{ color: "var(--text)", fontWeight: 500 }}>{who}</span> &middot; {role}
+        <span style={{ color: "var(--text)", fontWeight: 500 }}>{who}</span> &middot; {lote}
       </figcaption>
     </figure>
   );
@@ -208,7 +212,8 @@ function HomeFaq({ onOpenPage }) {
 }
 
 function FinalCta({ lots, onNavigate, onTour, onCategoryChange }) {
-  const endingToday = lots.filter(l => l.endsAt - Date.now() < 864e5).length;
+  const agora = useNow();
+  const endingToday = lots.filter((l) => !isEnded(l, agora) && l.endsAt - agora < 864e5).length;
   return (
     <section style={{
       padding: "56px 48px", textAlign: "center",
@@ -325,19 +330,23 @@ function HeroCollage({ lots, onOpenLot }) {
 
 function MiniSimulator({ initial }) {
   const [v, setV] = useState(initial);
-  const b = simulateCost(v);
+  const inputId = useId();
+  // As linhas vêm do domínio: o total é sempre a soma do que está na tela (BIZ-008).
+  const b = simulateCost(v, "imovel");
   return (
     <div>
-      <div style={{ fontSize: 12, color: "var(--text-mute)", marginBottom: 6 }}>Se você desse este lance:</div>
+      <label htmlFor={inputId} style={{ display: "block", fontSize: 12, color: "var(--text-mute)", marginBottom: 6 }}>
+        Se você desse este lance:
+      </label>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "8px 12px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10 }}>
-        <span style={{ fontFamily: "var(--mono)", color: "var(--text-mute)", fontSize: 14 }}>R$</span>
-        <input type="number" value={v} onChange={(e) => setV(Number(e.target.value) || 0)}
+        <span aria-hidden="true" style={{ fontFamily: "var(--mono)", color: "var(--text-mute)", fontSize: 14 }}>R$</span>
+        <input id={inputId} type="number" min={0} value={v} onChange={(e) => setV(Math.max(0, Number(e.target.value) || 0))}
           style={{ background: "transparent", border: "none", outline: "none", color: "var(--text)", fontFamily: "var(--mono)", fontSize: 18, fontWeight: 600, flex: 1, minWidth: 0 }} />
       </div>
       <div style={{ marginTop: 12, padding: "12px 14px", background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 10, fontSize: 12.5 }}>
-        <Row label="+ Comissão" value={b.comissao} />
-        <Row label="+ ITBI" value={b.itbi} />
-        <Row label="+ Cartório" value={b.registro} />
+        {b.lines.filter(l => l.key !== "lance").map(l => (
+          <Row key={l.key} label={`+ ${l.label}`} value={l.value} />
+        ))}
         <div style={{ height: 1, background: "var(--border)", margin: "6px 0" }} />
         <Row label="Custo total" value={b.total} accent />
       </div>
@@ -357,9 +366,14 @@ function Row({ label, value, accent }) {
 // TOUR — 5-step modal overlay
 // ============================================================
 export function TourOverlay({ open, onClose }) {
-  const [i, setI] = useState(0);
-  useEffect(() => { if (open) setI(0); }, [open]);
+  // Montar só quando abre dispensa o efeito que ressincronizava o passo.
   if (!open) return null;
+  return <TourSlides onClose={onClose} />;
+}
+
+function TourSlides({ onClose }) {
+  const [i, setI] = useState(0);
+  const tituloId = useId();
 
   const slides = [
     {
@@ -377,7 +391,7 @@ export function TourOverlay({ open, onClose }) {
     {
       kicker: "03 / 05 · Simulador",
       title: "Custo total na cara antes de qualquer lance.",
-      body: "Lance + comissão + ITBI + cartório, calculados na hora. Você decide com a calculadora aberta.",
+      body: "Lance + comissão do leiloeiro + taxa Leiloaê + ITBI + cartório, calculados na hora. Você decide com a calculadora aberta.",
       art: <ArtSimulator />,
     },
     {
@@ -397,21 +411,14 @@ export function TourOverlay({ open, onClose }) {
   const last = i === slides.length - 1;
 
   return (
-    <div style={{
-      position: "fixed", inset: 0, zIndex: 200,
-      background: "rgba(8,6,12,0.86)", backdropFilter: "blur(12px)",
-      display: "grid", placeItems: "center", padding: 24,
-      animation: "leiloe-fadein 0.25s ease",
-    }}>
-      <div style={{
-        width: "100%", maxWidth: 920,
-        background: "var(--surface)",
-        border: "1px solid var(--border-2)",
-        borderRadius: 24,
-        boxShadow: "0 40px 80px -16px rgba(0,0,0,0.7)",
-        overflow: "hidden",
-        animation: "leiloe-scalein 0.25s ease",
-      }}>
+    <Dialog
+      open
+      onClose={onClose}
+      labelledBy={tituloId}
+      overlayStyle={{ zIndex: 200, background: "rgba(8,6,12,0.86)", backdropFilter: "blur(12px)" }}
+      panelStyle={{ maxWidth: 920 }}
+    >
+      <div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", minHeight: 480 }}>
           <div style={{
             padding: "40px 40px 32px",
@@ -427,7 +434,7 @@ export function TourOverlay({ open, onClose }) {
             <div style={{ fontSize: 11, color: "var(--accent-ink)", textTransform: "uppercase", letterSpacing: "0.14em", marginBottom: 18, fontFamily: "var(--mono)" }}>
               {s.kicker}
             </div>
-            <h2 style={{ fontFamily: "var(--serif)", fontSize: 40, lineHeight: 1.05, letterSpacing: "-0.025em", margin: "0 0 18px", fontWeight: 400 }}>
+            <h2 id={tituloId} style={{ fontFamily: "var(--serif)", fontSize: 40, lineHeight: 1.05, letterSpacing: "-0.025em", margin: "0 0 18px", fontWeight: 400 }}>
               {s.title}
             </h2>
             <p style={{ color: "var(--text-dim)", fontSize: 16, lineHeight: 1.55, margin: 0 }}>{s.body}</p>
@@ -464,7 +471,7 @@ export function TourOverlay({ open, onClose }) {
           </div>
         </div>
       </div>
-    </div>
+    </Dialog>
   );
 }
 
@@ -505,22 +512,21 @@ function ArtGlossary() {
 }
 
 function ArtSimulator() {
+  // Números derivados do mesmo simulador do produto: o tour não pode ensinar
+  // um total diferente do que a pessoa vai ver na tela do lote (BIZ-008).
+  const exemplo = simulateCost(142500, "imovel");
   return (
     <div style={{ width: "75%", padding: 22, background: "var(--surface)", border: "1px solid var(--border-2)", borderRadius: 16 }}>
       <div style={{ fontSize: 11, color: "var(--text-mute)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>Custo total</div>
-      {[
-        ["Seu lance", "R$ 142.500"],
-        ["+ Comissão (5%)", "R$ 7.125"],
-        ["+ ITBI (3%)", "R$ 4.275"],
-        ["+ Cartório", "R$ 2.800"],
-      ].map(([l, v]) => (
-        <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 13, color: "var(--text-dim)" }}>
-          <span>{l}</span><span style={{ fontFamily: "var(--mono)" }}>{v}</span>
+      {exemplo.lines.map((l) => (
+        <div key={l.key} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 13, color: "var(--text-dim)" }}>
+          <span>{l.key === "lance" ? l.label : `+ ${l.label}`}</span>
+          <span style={{ fontFamily: "var(--mono)" }}>{fmtBRL(l.value)}</span>
         </div>
       ))}
       <div style={{ height: 1, background: "var(--border)", margin: "10px 0" }} />
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 16, color: "var(--accent-ink)", fontWeight: 600 }}>
-        <span>Total</span><span style={{ fontFamily: "var(--mono)" }}>R$ 156.700</span>
+        <span>Total</span><span style={{ fontFamily: "var(--mono)" }}>{fmtBRL(exemplo.total)}</span>
       </div>
     </div>
   );
@@ -558,6 +564,7 @@ function ArtSpark() {
 // ============================================================
 export function ListingScreen({ onOpenLot, density = "regular", category = "todos", onCategoryChange, onBid, onSave, onOpenCompare, lots = LOTS }) {
   const compare = useCompare();
+  const now = useNow();
   const [filters, setFilters] = useState({
     search: "",
     types: [],
@@ -569,10 +576,13 @@ export function ListingScreen({ onOpenLot, density = "regular", category = "todo
     priceMax: 350000,
   });
 
-  // Reset relevant filters when switching category
-  useEffect(() => {
-    setFilters(f => ({ ...f, types: [], regions: [], occupancy: "all", auctionType: "all", condition: "all" }));
-  }, [category]);
+  // Troca de categoria zera os filtros específicos. Ajuste durante o render em
+  // vez de efeito: evita um render extra com os filtros antigos aplicados.
+  const [categoriaAnterior, setCategoriaAnterior] = useState(category);
+  if (category !== categoriaAnterior) {
+    setCategoriaAnterior(category);
+    setFilters((f) => ({ ...f, types: [], regions: [], occupancy: "all", auctionType: "all", condition: "all" }));
+  }
 
   const filtered = useMemo(() => {
     let lotsArr = [...lots];
@@ -590,9 +600,11 @@ export function ListingScreen({ onOpenLot, density = "regular", category = "todo
     if (filters.auctionType !== "all") lotsArr = lotsArr.filter(l => l.auctionType === filters.auctionType);
     if (filters.condition !== "all") lotsArr = lotsArr.filter(l => l.condition === filters.condition);
     lotsArr = lotsArr.filter(l => l.currentBid <= filters.priceMax);
-    if (filters.sort === "ending") lotsArr.sort((a, b) => a.endsAt - b.endsAt);
-    else if (filters.sort === "price-low") lotsArr.sort((a, b) => a.currentBid - b.currentBid);
-    else if (filters.sort === "price-high") lotsArr.sort((a, b) => b.currentBid - a.currentBid);
+    // Lotes encerrados nunca aparecem antes dos abertos, em nenhuma ordenação.
+    const encerrado = (l) => (isEnded(l, now) ? 1 : 0);
+    if (filters.sort === "ending") lotsArr.sort((a, b) => encerrado(a) - encerrado(b) || a.endsAt - b.endsAt);
+    else if (filters.sort === "price-low") lotsArr.sort((a, b) => encerrado(a) - encerrado(b) || a.currentBid - b.currentBid);
+    else if (filters.sort === "price-high") lotsArr.sort((a, b) => encerrado(a) - encerrado(b) || b.currentBid - a.currentBid);
     else if (filters.sort === "discount") {
       lotsArr.sort((a, b) => {
         const refA = a.category === "carro" ? a.fipe : a.appraised;
@@ -601,7 +613,7 @@ export function ListingScreen({ onOpenLot, density = "regular", category = "todo
       });
     }
     return lotsArr;
-  }, [filters, category, lots]);
+  }, [filters, category, lots, now]);
 
   const hasFilters = filters.search || filters.types.length || filters.regions.length || filters.occupancy !== "all" || filters.auctionType !== "all" || filters.condition !== "all" || filters.priceMax < 350000;
 
@@ -610,6 +622,7 @@ export function ListingScreen({ onOpenLot, density = "regular", category = "todo
     sort: "ending", priceMax: 350000,
   });
 
+  const sortId = useId();
   const totals = {
     todos:   lots.length,
     imovel:  lots.filter(l => l.category === "imovel").length,
@@ -619,6 +632,7 @@ export function ListingScreen({ onOpenLot, density = "regular", category = "todo
   return (
     <div style={{ maxWidth: 1280, margin: "0 auto", padding: "40px 40px 80px" }}>
       <SectionHead
+        as="h1"
         overline="Explorar"
         title="Leilões em São Paulo"
         subtitle={<><b style={{ color: "var(--text)" }}>{filtered.length} resultados</b> · lotes abaixo de R$ 350.000 · região metropolitana.</>}
@@ -648,8 +662,8 @@ export function ListingScreen({ onOpenLot, density = "regular", category = "todo
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18, gap: 16, flexWrap: "wrap" }}>
             <ActiveFilterChips filters={filters} setFilters={setFilters} />
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 12.5, color: "var(--text-mute)" }}>Ordenar por:</span>
-              <select value={filters.sort} onChange={(e) => setFilters(f => ({ ...f, sort: e.target.value }))}
+              <label htmlFor={sortId} style={{ fontSize: 12.5, color: "var(--text-mute)" }}>Ordenar por:</label>
+              <select id={sortId} value={filters.sort} onChange={(e) => setFilters(f => ({ ...f, sort: e.target.value }))}
                 style={{ background: "var(--surface)", border: "1px solid var(--border-2)", color: "var(--text)", borderRadius: 999, padding: "6px 12px", fontSize: 13, outline: "none" }}>
                 <option value="ending">Encerrando em breve</option>
                 <option value="price-low">Menor preço</option>
@@ -722,6 +736,8 @@ function ActiveFilterChips({ filters, setFilters }) {
 }
 
 function FiltersPanel({ filters, setFilters, category, onClear, hasFilters }) {
+  const buscaId = useId();
+  const precoId = useId();
   const isCarro = category === "carro";
   const showAll = category === "todos";
   const TYPES = isCarro
@@ -750,7 +766,7 @@ function FiltersPanel({ filters, setFilters, category, onClear, hasFilters }) {
           )}
         </div>
 
-        <FilterGroup label="Buscar">
+        <FilterGroup label="Buscar" htmlFor={buscaId}>
           <div style={{
             display: "flex", alignItems: "center", gap: 8,
             background: "var(--bg-2)", border: "1px solid var(--border)",
@@ -759,6 +775,7 @@ function FiltersPanel({ filters, setFilters, category, onClear, hasFilters }) {
           }}>
             <Icon.search size={13} />
             <input
+              id={buscaId}
               value={filters.search}
               onChange={(e) => setFilters(f => ({ ...f, search: e.target.value }))}
               placeholder={isCarro ? "Marca, modelo…" : "Bairro, cidade…"}
@@ -818,8 +835,9 @@ function FiltersPanel({ filters, setFilters, category, onClear, hasFilters }) {
           ))}
         </FilterGroup>
 
-        <FilterGroup label="Preço máximo" last>
-          <input type="range" min={20000} max={350000} step={5000} value={filters.priceMax}
+        <FilterGroup label="Preço máximo" htmlFor={precoId} last>
+          <input id={precoId} type="range" min={20000} max={350000} step={5000} value={filters.priceMax}
+            aria-valuetext={fmtBRL(filters.priceMax)}
             onChange={(e) => setFilters(f => ({ ...f, priceMax: Number(e.target.value) }))}
             style={{ width: "100%", accentColor: "var(--accent)" }} />
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--text-dim)", marginTop: 6 }}>
@@ -850,16 +868,17 @@ function ChipToggle({ active, onClick, children }) {
   );
 }
 
-function FilterGroup({ label, children, last }) {
+function FilterGroup({ label, children, last, htmlFor }) {
+  const Rotulo = htmlFor ? "label" : "div";
   return (
     <div style={{ paddingBottom: last ? 0 : 18, marginBottom: last ? 0 : 18, borderBottom: last ? "none" : "1px solid var(--border)" }}>
-      <div style={{ fontSize: 12.5, color: "var(--text-dim)", marginBottom: 10, fontWeight: 500 }}>{label}</div>
+      <Rotulo htmlFor={htmlFor} style={{ display: "block", fontSize: 12.5, color: "var(--text-dim)", marginBottom: 10, fontWeight: 500 }}>{label}</Rotulo>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{children}</div>
     </div>
   );
 }
 
-function FilterRadio({ checked, onChange, children }) {
+function FilterRadio({ checked, onChange: _onChange, children }) {
   return (
     <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", padding: "2px 0" }}>
       <span style={{
@@ -910,57 +929,7 @@ export function CategoryCard({ label, count, sub, gradient, emoji, onClick, badg
   );
 }
 
-// ============================================================
-// MY BIDS — list of active bids
-// ============================================================
-export function MyBidsScreen({ onOpenLot, lots = LOTS }) {
-  // Simulated user bids
-  const myBidIds = ["lot-mooca-studio", "lot-tatuape-studio", "car-corolla"];
-  const myBids = lots.filter(l => myBidIds.includes(l.id)).map((lot, i) => ({
-    ...lot,
-    myBid: i === 0 ? lot.currentBid + 200 : i === 1 ? lot.currentBid - 1500 : lot.currentBid,
-    status: i === 0 ? "winning" : i === 1 ? "outbid" : "winning",
-    placedAt: ["há 2h", "há 14h", "há 1d"][i],
-  }));
-
-  const won = lots.filter(l => l.id === "lot-liberdade-kitnet").map(lot => ({ ...lot, myBid: 98500, wonAt: "há 3 dias" }));
-
-  return (
-    <div style={{ maxWidth: 1100, margin: "0 auto", padding: "40px 40px 80px", animation: "leiloe-fadein 0.3s ease" }}>
-      <SectionHead
-        overline="Meus lances"
-        title="Acompanhe sua disputa."
-        subtitle={`${myBids.length} leilões ativos · ${won.length} arremate na sua conta.`}
-      />
-
-      <div style={{ display: "flex", gap: 12, marginBottom: 32 }}>
-        <StatCard label="Lances ativos" value={myBids.length} tone="accent" />
-        <StatCard label="Ganhando" value={myBids.filter(b => b.status === "winning").length} tone="success" />
-        <StatCard label="Superado" value={myBids.filter(b => b.status === "outbid").length} tone="warning" />
-        <StatCard label="Arremates" value={won.length} tone="accent" />
-      </div>
-
-      <div style={{ marginBottom: 36 }}>
-        <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text-mute)", marginBottom: 12 }}>Em disputa</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {myBids.map(bid => (
-            <BidRow key={bid.id} bid={bid} onOpenLot={onOpenLot} />
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--text-mute)", marginBottom: 12 }}>Arrematados</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {won.map(bid => (
-            <BidRow key={bid.id} bid={{ ...bid, status: "won" }} onOpenLot={onOpenLot} />
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
+// StatCard permanece aqui por ser consumido por várias telas.
 export function StatCard({ label, value, tone, small }) {
   const tones = {
     accent:  { bg: "var(--accent-dim)", color: "var(--accent-ink)" },
@@ -979,50 +948,5 @@ export function StatCard({ label, value, tone, small }) {
         <span style={{ fontFamily: small ? "var(--mono)" : "var(--serif)", fontSize: small ? 22 : 34, fontWeight: small ? 600 : 400, lineHeight: 1, color: t.color }}>{value}</span>
       </div>
     </div>
-  );
-}
-
-function BidRow({ bid, onOpenLot }) {
-  const statusInfo = {
-    winning: { label: "Ganhando", color: "var(--success-ink)", bg: "var(--success-dim)" },
-    outbid:  { label: "Superado", color: "var(--hot-ink)", bg: "rgba(255,107,91,0.12)" },
-    won:     { label: "Arrematado", color: "var(--accent-ink)", bg: "var(--accent-dim)" },
-  }[bid.status];
-  return (
-    <button onClick={() => onOpenLot(bid)} style={{
-      display: "grid", gridTemplateColumns: "120px 1fr auto auto auto", gap: 20, alignItems: "center",
-      padding: "12px 16px", background: "var(--surface)", border: "1px solid var(--border)",
-      borderRadius: 14, cursor: "pointer", textAlign: "left", color: "inherit", width: "100%",
-      transition: "border-color 0.15s ease",
-    }}
-    onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--border-2)"; }}
-    onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; }}
-    >
-      <div style={{ width: 120, height: 80, borderRadius: 10, overflow: "hidden" }}>
-        <LotPhoto lot={bid} height={80} rounded="0" showBadges={false} autoRotate />
-      </div>
-      <div style={{ minWidth: 0 }}>
-        <div style={{ fontFamily: "var(--serif)", fontSize: 18, lineHeight: 1.15, marginBottom: 2 }}>{bid.title}</div>
-        <div style={{ fontSize: 12.5, color: "var(--text-mute)" }}>
-          {bid.category === "carro"
-            ? `${bid.year} · ${bid.transmission} · ${fmtNum(bid.km)} km`
-            : `${bid.address.split(" — ")[1] || ""} · ${bid.region}`}
-        </div>
-      </div>
-      <div style={{ textAlign: "right" }}>
-        <div style={{ fontSize: 10.5, color: "var(--text-mute)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>Seu lance</div>
-        <div style={{ fontFamily: "var(--mono)", fontSize: 16, fontWeight: 600 }}>{fmtBRL(bid.myBid)}</div>
-      </div>
-      <div style={{ textAlign: "right" }}>
-        <div style={{ fontSize: 10.5, color: "var(--text-mute)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>{bid.status === "won" ? "Arrematado" : "Encerra"}</div>
-        {bid.status === "won"
-          ? <div style={{ fontSize: 13, color: "var(--text-dim)" }}>{bid.wonAt}</div>
-          : <Countdown endsAt={bid.endsAt} compact />}
-      </div>
-      <span style={{
-        padding: "5px 12px", borderRadius: 999, fontSize: 12, fontWeight: 500,
-        background: statusInfo.bg, color: statusInfo.color,
-      }}>{statusInfo.label}</span>
-    </button>
   );
 }

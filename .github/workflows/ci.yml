@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+defaults:
+  run:
+    working-directory: project
+
+jobs:
+  verify:
+    name: Lint, testes e build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: project/.nvmrc
+          cache: npm
+          cache-dependency-path: project/package-lock.json
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Lint (inclui regras de acessibilidade)
+        run: npm run lint
+
+      - name: Testes unitários e de componente
+        run: npm test
+
+      - name: Auditoria de dependências
+        run: npm audit --audit-level=high
+
+      - name: Build de produção
+        run: npm run build
+
+      - name: Publicar artefato do build
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: project/dist
+          retention-days: 7
+
+  e2e:
+    name: Testes ponta a ponta
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: project/.nvmrc
+          cache: npm
+          cache-dependency-path: project/package-lock.json
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Instalar navegador do Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Rodar E2E
+        run: npm run test:e2e
+
+      - name: Publicar relatório em caso de falha
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: project/playwright-report
+          retention-days: 7

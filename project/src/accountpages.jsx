@@ -1,14 +1,16 @@
 // Account sub-pages: Histórico, Mensagens, Pagamentos, Configurações.
-import { useState, useRef, useEffect } from "react";
-import { LOTS, fmtBRL } from "./data.js";
+import { useState, useRef, useEffect, useId } from "react";
+import { LOTS } from "./data.js";
+import { formatBRL as fmtBRL, bidStatus } from "./domain/auction.js";
 import { SectionHead, Button, Icon } from "./components.jsx";
 import { StatCard } from "./screens.jsx";
+import { DemoNotice } from "./ui/DemoBanner.jsx";
 
 // ---------- shared shell ----------
 function PageWrap({ overline, title, subtitle, right, max = 1080, children }) {
   return (
     <div style={{ maxWidth: max, margin: "0 auto", padding: "40px 40px 80px", animation: "leiloe-fadein 0.3s ease" }}>
-      <SectionHead overline={overline} title={title} subtitle={subtitle} right={right} />
+      <SectionHead as="h1" overline={overline} title={title} subtitle={subtitle} right={right} />
       {children}
     </div>
   );
@@ -31,25 +33,35 @@ function APanel({ title, sub, action, onAction, children, pad = true }) {
   );
 }
 
-function Switch({ checked, onChange }) {
+function Switch({ checked, onChange, id, label }) {
   return (
-    <span onClick={onChange} style={{
-      width: 40, height: 23, borderRadius: 999, flexShrink: 0, position: "relative", cursor: "pointer",
-      background: checked ? "var(--accent)" : "var(--surface-3)", transition: "background 0.18s ease",
-    }}>
-      <span style={{ position: "absolute", top: 3, left: checked ? 20 : 3, width: 17, height: 17, borderRadius: "50%", background: checked ? "#15101F" : "var(--text-mute)", transition: "left 0.18s ease" }} />
-    </span>
+    <button
+      id={id}
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={onChange}
+      style={{
+        width: 40, height: 23, borderRadius: 999, flexShrink: 0, position: "relative", cursor: "pointer",
+        border: "none", padding: 0,
+        background: checked ? "var(--accent)" : "var(--surface-3)", transition: "background 0.18s ease",
+      }}
+    >
+      <span aria-hidden="true" style={{ position: "absolute", top: 3, left: checked ? 20 : 3, width: 17, height: 17, borderRadius: "50%", background: checked ? "#15101F" : "var(--text-mute)", transition: "left 0.18s ease" }} />
+    </button>
   );
 }
 
 function ToggleLine({ label, sub, checked, onChange, last }) {
+  const id = useId();
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, padding: "14px 0", borderBottom: last ? "none" : "1px solid var(--border)" }}>
       <div>
-        <div style={{ fontSize: 14, color: "var(--text)" }}>{label}</div>
+        <label htmlFor={id} style={{ fontSize: 14, color: "var(--text)", cursor: "pointer" }}>{label}</label>
         {sub && <div style={{ fontSize: 12, color: "var(--text-mute)", marginTop: 2 }}>{sub}</div>}
       </div>
-      <Switch checked={checked} onChange={onChange} />
+      <Switch id={id} checked={checked} onChange={onChange} label={typeof label === "string" ? label : undefined} />
     </div>
   );
 }
@@ -69,11 +81,25 @@ function Chip({ active, children, onClick }) {
 // ====================================================================
 // HISTÓRICO — activity timeline
 // ====================================================================
-export function HistoryScreen({ onOpenLot, onNavigate }) {
+export function HistoryScreen({ onOpenLot, lots = LOTS, bids = [] }) {
   const [filter, setFilter] = useState("tudo");
-  const byId = (id) => LOTS.find(l => l.id === id);
+  const byId = (id) => lots.find(l => l.id === id);
 
-  const events = [
+  // Eventos reais do usuário primeiro; os demais ilustram a linha do tempo.
+  const meusEventos = bids.map(({ bid, lot }) => {
+    const status = bidStatus(bid, lot);
+    return {
+      id: bid.id,
+      kind: status === "won" ? "won" : status === "outbid" ? "outbid" : "bid",
+      day: "Hoje",
+      time: new Date(bid.placedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
+      lot: lot.id,
+      title: bid.canceled ? "Você cancelou um lance" : status === "won" ? "Arremate concluído" : status === "outbid" ? "Seu lance foi superado" : "Você deu um lance",
+      detail: `${fmtBRL(bid.value)} em ${lot.title}.`,
+    };
+  });
+
+  const events = [...meusEventos,
     { id: "e1", kind: "outbid", day: "Hoje", time: "14:32", lot: "lot-tatuape-studio", title: "Seu lance foi superado", detail: "Novo lance de R$ 158.200 — R$ 1.500 acima do seu." },
     { id: "e2", kind: "bid", day: "Hoje", time: "09:11", lot: "lot-mooca-studio", title: "Você deu um lance", detail: "R$ 142.700 no Studio na Mooca." },
     { id: "e3", kind: "saved", day: "Ontem", time: "21:04", lot: "car-civic", title: "Você salvou um lote", detail: "Honda Civic EXL 2019 adicionado aos favoritos." },
@@ -99,7 +125,7 @@ export function HistoryScreen({ onOpenLot, onNavigate }) {
     { id: "conta", label: "Conta" },
   ];
 
-  const shown = events.filter(e => filter === "tudo" || kindMap[e.kind].group === filter);
+  const shown = events.filter(e => filter === "tudo" || kindMap[e.kind]?.group === filter);
   const days = [...new Set(shown.map(e => e.day))];
 
   return (
@@ -120,14 +146,17 @@ export function HistoryScreen({ onOpenLot, onNavigate }) {
               const k = kindMap[e.kind];
               const lot = e.lot ? byId(e.lot) : null;
               const clickable = !!lot;
+              const Componente = clickable ? "button" : "div";
               return (
-                <div key={e.id} onClick={() => clickable && onOpenLot(lot)} style={{
-                  display: "flex", gap: 14, alignItems: "center", padding: "14px 18px",
-                  background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14,
-                  cursor: clickable ? "pointer" : "default",
-                }}
-                  onMouseEnter={(ev) => { if (clickable) ev.currentTarget.style.borderColor = "var(--border-2)"; }}
-                  onMouseLeave={(ev) => { ev.currentTarget.style.borderColor = "var(--border)"; }}>
+                <Componente
+                  key={e.id}
+                  {...(clickable ? { type: "button", onClick: () => onOpenLot(lot) } : {})}
+                  style={{
+                    display: "flex", gap: 14, alignItems: "center", padding: "14px 18px", width: "100%",
+                    textAlign: "left", font: "inherit", color: "inherit",
+                    background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14,
+                    cursor: clickable ? "pointer" : "default",
+                  }}>
                   <span style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0, display: "grid", placeItems: "center", background: k.bg, color: k.color }}>{k.icon}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 14.5, fontWeight: 500 }}>{e.title}</div>
@@ -135,7 +164,7 @@ export function HistoryScreen({ onOpenLot, onNavigate }) {
                   </div>
                   <span style={{ fontSize: 12, color: "var(--text-mute)", fontFamily: "var(--mono)", flexShrink: 0 }}>{e.time}</span>
                   {clickable && <Icon.arrowR size={14} />}
-                </div>
+                </Componente>
               );
             })}
           </div>
@@ -183,6 +212,7 @@ export function MessagesScreen() {
   const [drafts, setDrafts] = useState({});
   const [threads, setThreads] = useState(() => Object.fromEntries(CONVERSATIONS.map(c => [c.id, c.msgs])));
   const bottomRef = useRef(null);
+  const campoMsgId = useId();
   const active = CONVERSATIONS.find(c => c.id === activeId);
   const msgs = threads[activeId] || [];
 
@@ -196,7 +226,14 @@ export function MessagesScreen() {
   };
 
   return (
-    <PageWrap overline="Mensagens" title="Sua caixa de entrada." subtitle="Converse com leiloeiros e com o suporte, sem sair da plataforma." max={1080}>
+    <PageWrap overline="Mensagens" title="Sua caixa de entrada." subtitle="Onde ficam as conversas com leiloeiros e com o suporte." max={1080}>
+      {/* A caixa é simulada: o campo aceita texto livre, e sem este aviso a
+          pessoa acredita estar falando com um leiloeiro de verdade (SEC-002). */}
+      <DemoNotice>
+        Conversas de exemplo. O que você escrever aqui aparece na tela, mas
+        <b> não é enviado a ninguém</b> e não fica guardado — não escreva dados
+        pessoais.
+      </DemoNotice>
       <div className="msg-grid" style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 0, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", overflow: "hidden", minHeight: 520 }}>
         {/* conversation list */}
         <div className="msg-list" style={{ borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column" }}>
@@ -251,7 +288,9 @@ export function MessagesScreen() {
           </div>
 
           <div style={{ display: "flex", gap: 10, padding: "14px 16px", borderTop: "1px solid var(--border)" }}>
+            <label htmlFor={campoMsgId} style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap" }}>Escreva uma mensagem</label>
             <input
+              id={campoMsgId}
               value={drafts[activeId] || ""}
               onChange={(e) => setDrafts(d => ({ ...d, [activeId]: e.target.value }))}
               onKeyDown={(e) => { if (e.key === "Enter") send(); }}
@@ -341,6 +380,7 @@ export function SettingsScreen({ theme = "dark", onSetTheme, onSignOut, onOpenPa
   const [prefs, setPrefs] = useState({ outbid: true, ending: true, newLots: false, email: true, whatsapp: true });
   const [privacy, setPrivacy] = useState({ publicProfile: false, analytics: true });
   const [lang, setLang] = useState("pt-BR");
+  const langId = useId();
   const toggle = (set, k) => set(p => ({ ...p, [k]: !p[k] }));
 
   const themeOpts = [
@@ -368,8 +408,8 @@ export function SettingsScreen({ theme = "dark", onSetTheme, onSignOut, onOpenPa
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, padding: "14px 0" }}>
-            <div style={{ fontSize: 14 }}>Idioma</div>
-            <select value={lang} onChange={(e) => { setLang(e.target.value); if (e.target.value !== "pt-BR") notify && notify("Outros idiomas — em breve"); }} style={{ background: "var(--surface-2)", border: "1px solid var(--border-2)", color: "var(--text)", borderRadius: 10, padding: "9px 14px", fontSize: 14, outline: "none" }}>
+            <label htmlFor={langId} style={{ fontSize: 14 }}>Idioma</label>
+            <select id={langId} value={lang} onChange={(e) => { setLang(e.target.value); if (e.target.value !== "pt-BR") notify && notify("Outros idiomas — em breve"); }} style={{ background: "var(--surface-2)", border: "1px solid var(--border-2)", color: "var(--text)", borderRadius: 10, padding: "9px 14px", fontSize: 14, outline: "none" }}>
               <option value="pt-BR">Português (Brasil)</option>
               <option value="es">Español</option>
               <option value="en">English</option>

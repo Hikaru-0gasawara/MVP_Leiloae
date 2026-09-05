@@ -1,8 +1,10 @@
 // Comparar leilões — floating bar + side-by-side modal.
-import { useEffect } from "react";
-import { VENDORS, fmtBRL, fmtNum, simulateCost } from "./data.js";
+import { useId } from "react";
+import { VENDORS } from "./data.js";
+import { simulateCost, discountPct, referenceValueOf, formatBRL as fmtBRL, formatNumber as fmtNum } from "./domain/auction.js";
 import { Icon, LotPhoto, Countdown } from "./components.jsx";
 import { compareStore, useCompare } from "./state/compareStore.js";
+import { Dialog } from "./ui/Dialog.jsx";
 
 const cmpGlyphs = { studio: "▢", apto: "◫", casa: "⌂", sedan: "🚗", hatch: "🚗", suv: "🚙" };
 
@@ -71,26 +73,19 @@ export function CompareBar({ onOpen, hidden, lots }) {
 // ---------- Side-by-side comparison modal ----------
 export function CompareModal({ open, onClose, onBid, lots }) {
   const compare = useCompare();
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  const tituloId = useId();
   if (!open) return null;
 
   const selected = compare.ids.map(id => lots.find(l => l.id === id)).filter(Boolean);
   if (selected.length === 0) return null;
 
   const data = selected.map(l => {
-    const ref = l.category === "carro" ? l.fipe : l.appraised;
-    const discount = Math.round((1 - l.currentBid / ref) * 100);
-    const bd = simulateCost(l.currentBid);
-    const total = l.category === "carro" ? bd.total - bd.itbi : bd.total;
-    return { lot: l, ref, discount, total };
+    // ITBI já não entra para veículo: a regra vive no domínio (BIZ-007).
+    const total = simulateCost(l.currentBid, l.category).total;
+    return { lot: l, ref: referenceValueOf(l), discount: discountPct(l), total };
   });
   const minBid = Math.min(...data.map(d => d.lot.currentBid));
-  const maxDisc = Math.max(...data.map(d => d.discount));
+  const maxDisc = Math.max(...data.map(d => d.discount ?? -Infinity));
   const minTotal = Math.min(...data.map(d => d.total));
   const soonest = Math.min(...data.map(d => d.lot.endsAt));
   const anyImovel = selected.some(l => l.category !== "carro");
@@ -124,7 +119,7 @@ export function CompareModal({ open, onClose, onBid, lots }) {
     els.push(
       <div key={`h-${i}`} style={{ padding: 14, borderBottom: "1px solid var(--border-2)", borderRight: "1px solid var(--border)" }}>
         <div style={{ position: "relative", borderRadius: 12, overflow: "hidden", marginBottom: 12 }}>
-          <LotPhoto lot={d.lot} height={104} rounded="0" showBadges={false} />
+          <LotPhoto lot={d.lot} height={104} rounded="0" showBadges={false} context="thumb" />
           <button onClick={() => compareStore.remove(d.lot.id)} aria-label="Remover da comparação" style={{
             position: "absolute", top: 8, right: 8, width: 26, height: 26, borderRadius: "50%",
             background: "rgba(12,9,17,0.7)", border: "1px solid rgba(255,255,255,0.18)", color: "var(--text)",
@@ -157,12 +152,14 @@ export function CompareModal({ open, onClose, onBid, lots }) {
   ), (d) => d.lot.currentBid === minBid);
 
   addRow(anyCarro && !anyImovel ? "FIPE" : "Referência", (d) => (
-    <span style={{ color: "var(--text-dim)" }}><s>{fmtBRL(d.ref)}</s> <span style={{ fontSize: 11, color: "var(--text-mute)" }}>{d.lot.category === "carro" ? "FIPE" : "aval."}</span></span>
+    <span style={{ color: "var(--text-dim)" }}><s>{d.ref === null ? "—" : fmtBRL(d.ref)}</s> <span style={{ fontSize: 11, color: "var(--text-mute)" }}>{d.lot.category === "carro" ? "FIPE" : "aval."}</span></span>
   ));
 
   addRow("Desconto", (d) => (
-    <span style={{ color: "var(--success-ink)", fontWeight: 600, fontFamily: "var(--mono)" }}>−{d.discount}%</span>
-  ), (d) => d.discount === maxDisc);
+    d.discount === null
+      ? <span style={{ color: "var(--text-mute)" }}>—</span>
+      : <span style={{ color: "var(--success-ink)", fontWeight: 600, fontFamily: "var(--mono)" }}>−{d.discount}%</span>
+  ), (d) => d.discount !== null && d.discount === maxDisc);
 
   addRow("Custo total estimado", (d) => (
     <span style={{ fontFamily: "var(--mono)", fontWeight: 600, color: "var(--accent-ink)" }}>{fmtBRL(d.total)}</span>
@@ -208,36 +205,35 @@ export function CompareModal({ open, onClose, onBid, lots }) {
     );
   });
 
+  // Mesmo diálogo acessível do restante do app: foco preso, ESC e ARIA (FRONT-005).
   return (
-    <div onClick={onClose} style={{
-      position: "fixed", inset: 0, zIndex: 150,
-      background: "rgba(8,6,12,0.8)", backdropFilter: "blur(10px)",
-      display: "grid", placeItems: "center", padding: 24,
-      animation: "leiloe-fadein 0.2s ease",
-    }}>
-      <div onClick={(e) => e.stopPropagation()} style={{
-        width: "min(1040px, 100%)", maxHeight: "calc(100vh - 48px)",
-        background: "var(--surface)", border: "1px solid var(--border-2)",
-        borderRadius: 22, boxShadow: "0 40px 90px -20px rgba(0,0,0,0.7)",
-        display: "flex", flexDirection: "column", overflow: "hidden",
-        animation: "leiloe-scalein 0.22s ease",
-      }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 24px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-          <div>
-            <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--accent-ink)", marginBottom: 5 }}>Lado a lado</div>
-            <div style={{ fontFamily: "var(--serif)", fontSize: 26, letterSpacing: "-0.01em", lineHeight: 1 }}>Comparando {selected.length} leilões</div>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={() => compareStore.clear()} style={{ background: "transparent", border: "1px solid var(--border-2)", color: "var(--text-dim)", borderRadius: 999, padding: "8px 14px", fontSize: 13, cursor: "pointer" }}>Limpar tudo</button>
-            <button onClick={onClose} aria-label="Fechar" style={{ background: "transparent", border: "1px solid var(--border-2)", color: "var(--text-dim)", borderRadius: "50%", width: 36, height: 36, display: "grid", placeItems: "center", cursor: "pointer" }}><Icon.close size={14} /></button>
-          </div>
+    <Dialog
+      open
+      onClose={onClose}
+      labelledBy={tituloId}
+      overlayStyle={{ zIndex: 150, background: "rgba(8,6,12,0.8)", backdropFilter: "blur(10px)" }}
+      panelStyle={{
+        width: "min(1040px, 100%)", maxWidth: "min(1040px, 100%)", maxHeight: "calc(100vh - 48px)",
+        borderRadius: 22, display: "flex", flexDirection: "column",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 24px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+        <div>
+          <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--accent-ink)", marginBottom: 5 }}>Lado a lado</div>
+          <h2 id={tituloId} style={{ margin: 0, fontFamily: "var(--serif)", fontSize: 26, fontWeight: 400, letterSpacing: "-0.01em", lineHeight: 1 }}>
+            Comparando {selected.length} leilões
+          </h2>
         </div>
-        <div style={{ overflow: "auto", flex: 1 }}>
-          <div style={{ display: "grid", gridTemplateColumns: cols, minWidth: "fit-content" }}>
-            {els}
-          </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button type="button" onClick={() => compareStore.clear()} style={{ background: "transparent", border: "1px solid var(--border-2)", color: "var(--text-dim)", borderRadius: 999, padding: "8px 14px", fontSize: 13, cursor: "pointer" }}>Limpar tudo</button>
+          <button type="button" onClick={onClose} aria-label="Fechar" style={{ background: "transparent", border: "1px solid var(--border-2)", color: "var(--text-dim)", borderRadius: "50%", width: 36, height: 36, display: "grid", placeItems: "center", cursor: "pointer" }}><Icon.close size={14} /></button>
         </div>
       </div>
-    </div>
+      <div style={{ overflow: "auto", flex: 1 }}>
+        <div style={{ display: "grid", gridTemplateColumns: cols, minWidth: "fit-content" }}>
+          {els}
+        </div>
+      </div>
+    </Dialog>
   );
 }

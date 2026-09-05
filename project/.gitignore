@@ -1,3 +1,13 @@
 node_modules
 dist
 .DS_Store
+
+# Saída das ferramentas de teste
+test-results
+playwright-report
+coverage
+
+# Config local (nunca versionar segredos; ver .env.example)
+.env
+.env.local
+.env.*.local

@@ -1,7 +1,9 @@
 // Top navigation — "Top + ticker ao vivo" (the production nav variation).
-import { useState, useRef, useEffect, useMemo } from "react";
-import { fmtBRL } from "./data.js";
+import { useState, useRef, useMemo, useCallback, useId } from "react";
+import { formatBRL as fmtBRL, isEnded } from "./domain/auction.js";
 import { Icon, Badge, Countdown } from "./components.jsx";
+import { useNow } from "./lib/clock.js";
+import { useDismissable } from "./ui/Dialog.jsx";
 
 // ---------- Shared: Logo wordmark ----------
 export function Wordmark({ size = 24, sub }) {
@@ -35,17 +37,15 @@ export function ThemeToggle({ theme = "dark", onToggle, style }) {
 }
 
 // ---------- Account chip (with profile popover) ----------
-export function AccountChip({ compact, name = "Camila", fullName = "Camila Silva", email = "camila@email.com", onTour, onNavigate, onOpenPage, onMyData, onNotifications, onSignOut, onSignIn, notify, loggedIn = true, notifCount = 2 }) {
+export function AccountChip({ compact, name = "Camila", fullName = "Camila Silva", email = "camila@email.com", onNavigate, onOpenPage, onMyData, onNotifications, onSignOut, onSignIn, loggedIn = true, notifCount = 2 }) {
   const [open, setOpen] = useState(false);
+  const painelId = useId();
   const ref = useRef(null);
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
-    document.addEventListener("mousedown", onClick);
-    document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("mousedown", onClick); document.removeEventListener("keydown", onKey); };
-  }, [open]);
+  // Mesmo comportamento de dispensa dos diálogos: ESC, clique fora e devolução
+  // do foco ao gatilho — uma implementação só, em vez de uma cópia por overlay
+  // (FRONT-011).
+  const fechar = useCallback(() => setOpen(false), []);
+  useDismissable({ open, onClose: fechar, ref });
 
   // Logged-out: show an "Entrar" button instead of the avatar.
   if (!loggedIn) {
@@ -62,7 +62,7 @@ export function AccountChip({ compact, name = "Camila", fullName = "Camila Silva
 
   return (
     <div ref={ref} style={{ position: "relative", flexShrink: 0 }}>
-      <button onClick={() => setOpen(o => !o)} style={{
+      <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open} aria-controls={painelId} aria-label={"Conta de " + fullName} style={{
         display: "flex", alignItems: "center", gap: 8,
         background: open ? "var(--surface-2)" : "transparent",
         border: "1px solid var(--border-2)",
@@ -78,7 +78,12 @@ export function AccountChip({ compact, name = "Camila", fullName = "Camila Silva
         {!compact && <span style={{ fontSize: 13.5, color: "var(--text-dim)" }}>{name}</span>}
       </button>
       {open && (
-        <div style={{
+        // Divulgação (disclosure), não `role="menu"`: o painel traz um bloco de
+        // identidade além das ações, e não implementa navegação por setas. Um
+        // `menu` com filhos que não são `menuitem` é ARIA inválida (axe:
+        // aria-required-children) e anuncia uma promessa de teclado que a
+        // interface não cumpre.
+        <div id={painelId} aria-label={"Painel da conta de " + fullName} style={{
           position: "absolute", top: "calc(100% + 8px)", right: 0,
           width: 288,
           background: "var(--surface)",
@@ -212,17 +217,10 @@ const NOTIFICATIONS = [
 
 export function NotificationsPanel({ open, onClose }) {
   const ref = useRef(null);
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
-    const onKey = (e) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("mousedown", onClick);
-    document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("mousedown", onClick); document.removeEventListener("keydown", onKey); };
-  }, [open, onClose]);
+  useDismissable({ open, onClose, ref });
   if (!open) return null;
   return (
-    <div ref={ref} style={{
+    <div ref={ref} role="dialog" aria-label="Notificações" style={{
       position: "fixed",
       top: 64, right: 96,
       width: 380, maxHeight: "70vh",
@@ -241,7 +239,7 @@ export function NotificationsPanel({ open, onClose }) {
             <div style={{ fontFamily: "var(--serif)", fontSize: 20, lineHeight: 1.1 }}>Notificações</div>
             <div style={{ fontSize: 12, color: "var(--text-mute)", marginTop: 3 }}>{NOTIFICATIONS.filter(n => n.unread).length} não lidas</div>
           </div>
-          <button onClick={onClose} style={{ background: "transparent", border: "1px solid var(--border-2)", color: "var(--text-dim)", borderRadius: "50%", width: 28, height: 28, display: "grid", placeItems: "center", cursor: "pointer" }}>
+          <button type="button" onClick={onClose} aria-label="Fechar notificações" style={{ background: "transparent", border: "1px solid var(--border-2)", color: "var(--text-dim)", borderRadius: "50%", width: 28, height: 28, display: "grid", placeItems: "center", cursor: "pointer" }}>
             <Icon.close size={12} />
           </button>
         </div>
@@ -294,16 +292,19 @@ export function NotificationsPanel({ open, onClose }) {
 // =====================================================================
 // Top minimalista + Live ticker
 // =====================================================================
-export function NavB({ route, category, onNavigate, onCategoryChange, onTour, onOpenNotifications, notificationsOpen, account, theme, onToggleTheme, lots }) {
+export function NavB({ route, onNavigate, onCategoryChange, onTour, onOpenNotifications, notificationsOpen, account, theme, onToggleTheme, lots }) {
   const items = [
     { id: "auctions", label: "Leilões" },
     { id: "bids",     label: "Meus lances" },
     { id: "saved",    label: "Salvos" },
   ];
 
-  const ticker = useMemo(() => {
-    return [...lots].sort((a, b) => a.endsAt - b.endsAt);
-  }, [lots]);
+  // O ticker anuncia apenas leilões que ainda dá pra disputar (BIZ-002).
+  const agora = useNow();
+  const ticker = useMemo(
+    () => lots.filter((l) => !isEnded(l, agora)).sort((a, b) => a.endsAt - b.endsAt),
+    [lots, agora]
+  );
 
   const activeId = (route === "listing" || route === "lot") ? "auctions"
                  : route === "my-bids" ? "bids"

@@ -1,24 +1,31 @@
-// Main App — routes and global state.
-import { useState, useEffect, useMemo, useRef } from "react";
+// Aplicação — rotas, estado global e composição das telas.
+import { useState, useEffect, useMemo, useReducer, useRef, useCallback } from "react";
 import { LOTS } from "./data.js";
+import { isEnded, minBidFor } from "./domain/auction.js";
+import { useNow } from "./lib/clock.js";
+import { IS_DEMO } from "./lib/config.js";
+import { routeToPath, pathToRoute, routeTitle } from "./lib/router.js";
+import { userReducer, loadUserState, saveUserState, applyUserState, myBids } from "./state/userState.js";
+import { compareStore } from "./state/compareStore.js";
 import { NavB, NotificationsPanel } from "./nav.jsx";
 import { Footer, PageScreen } from "./pages.jsx";
-import { HomeScreen, TourOverlay, ListingScreen, MyBidsScreen } from "./screens.jsx";
+import { HomeScreen, TourOverlay, ListingScreen } from "./screens.jsx";
+import { MyBidsScreen } from "./mybids.jsx";
 import { SavedScreen } from "./saved.jsx";
 import { Toast, ProfileScreen } from "./account.jsx";
 import { HistoryScreen, MessagesScreen, PaymentsScreen, SettingsScreen } from "./accountpages.jsx";
 import { LotDetailScreen, WinScreen } from "./lotdetail.jsx";
 import { BidModal } from "./bidmodal.jsx";
 import { CompareBar, CompareModal } from "./compare.jsx";
-import { compareStore } from "./state/compareStore.js";
+import { ErrorBoundary } from "./ui/ErrorBoundary.jsx";
+import { DemoBanner } from "./ui/DemoBanner.jsx";
 
 export default function App() {
-  const [route, setRoute] = useState({ name: "home", lotId: null, winValue: null });
-  const [category, setCategory] = useState("todos"); // todos | imovel | carro
+  const [route, setRoute] = useState(() => pathToRoute(window.location.pathname));
+  const [category, setCategory] = useState("todos");
   const [tourOpen, setTourOpen] = useState(false);
   const [bidLot, setBidLot] = useState(null);
-  const [lots, setLots] = useState(LOTS);
-  const [hasBid, setHasBid] = useState(false);
+  const [bidSuggestion, setBidSuggestion] = useState(null);
   const [notifOpen, setNotifOpen] = useState(false);
   const [loggedIn, setLoggedIn] = useState(true);
   const [toast, setToast] = useState(null);
@@ -26,17 +33,27 @@ export default function App() {
   const [theme, setTheme] = useState(() => {
     try { return localStorage.getItem("leiloe:theme") || "dark"; } catch { return "dark"; }
   });
+  const [userState, dispatch] = useReducer(userReducer, undefined, loadUserState);
   const toastTimer = useRef(null);
+  const now = useNow();
 
-  // Apply light/dark theme to the document root
+  // Catálogo com os lances e favoritos do usuário aplicados (BIZ-001, FRONT-001).
+  const lots = useMemo(() => applyUserState(LOTS, userState), [userState]);
+  const minhasApostas = useMemo(() => myBids(userState, lots), [userState, lots]);
+  const currentLot = useMemo(() => lots.find((l) => l.id === route.lotId), [lots, route.lotId]);
+
+  useEffect(() => { saveUserState(userState); }, [userState]);
+
+  // Tema
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
-    try { localStorage.setItem("leiloe:theme", theme); } catch { /* storage unavailable */ }
+    try { localStorage.setItem("leiloe:theme", theme); } catch { /* armazenamento indisponível */ }
   }, [theme]);
-  const onToggleTheme = () => setTheme(th => th === "light" ? "dark" : "light");
-  const onSetTheme = (th) => setTheme(th);
 
-  // Toast: listen for global "leiloe:toast" events from anywhere in the app.
+  // Título do documento acompanha a rota.
+  useEffect(() => { document.title = routeTitle(route, currentLot); }, [route, currentLot]);
+
+  // Toast global
   useEffect(() => {
     const onToast = (e) => {
       setToast(e.detail);
@@ -44,41 +61,56 @@ export default function App() {
       toastTimer.current = setTimeout(() => setToast(null), 2800);
     };
     window.addEventListener("leiloe:toast", onToast);
-    return () => window.removeEventListener("leiloe:toast", onToast);
+    return () => {
+      window.removeEventListener("leiloe:toast", onToast);
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+    };
   }, []);
 
-  const navigate = (name, lotId = null) => {
-    setRoute({ name, lotId, winValue: null });
+  // Botão voltar/avançar do navegador (ARCH-002)
+  useEffect(() => {
+    const onPop = () => setRoute(pathToRoute(window.location.pathname));
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  const navigate = useCallback((name, lotId = null, extra = {}) => {
+    const next = { name, lotId, ...extra };
+    setRoute(next);
+    const path = routeToPath(next);
+    if (path !== window.location.pathname) window.history.pushState({}, "", path);
     window.scrollTo({ top: 0, behavior: "instant" });
-  };
+  }, []);
 
-  const openLot = (lot) => {
-    navigate("lot", lot.id);
-  };
-
-  const openPage = (pageId) => {
-    setRoute({ name: "page", lotId: null, winValue: null, pageId });
-    window.scrollTo({ top: 0, behavior: "instant" });
-  };
-
-  const openBid = (lot) => {
-    setBidLot(lot);
-  };
-
-  const closeBid = () => setBidLot(null);
-
-  const onSimulateWin = (lot, value) => {
-    setHasBid(true);
-    setBidLot(null);
-    setRoute({ name: "win", lotId: lot.id, winValue: value });
-    window.scrollTo({ top: 0, behavior: "instant" });
-  };
-
-  const saveLot = (lot) => {
-    setLots(ls => ls.map(l => l.id === lot.id ? { ...l, saved: !l.saved } : l));
-  };
+  const openLot = useCallback((lot) => navigate("lot", lot.id), [navigate]);
+  const openPage = useCallback((pageId) => navigate("page", null, { pageId }), [navigate]);
 
   const notify = (msg) => window.dispatchEvent(new CustomEvent("leiloe:toast", { detail: msg }));
+
+  /** Abre o modal de lance — recusa lote encerrado antes mesmo de abrir (BIZ-002). */
+  const openBid = useCallback((lot, suggestion = null) => {
+    if (isEnded(lot, Date.now())) {
+      notify("Este leilão já encerrou.");
+      return;
+    }
+    setBidSuggestion(suggestion ?? minBidFor(lot));
+    setBidLot(lot);
+  }, []);
+
+  const closeBid = () => { setBidLot(null); setBidSuggestion(null); };
+
+  const confirmBid = ({ lot, value, autoMax }) => {
+    dispatch({ type: "place-bid", lot, value, autoMax, now: Date.now() });
+  };
+
+  const cancelBid = (bidId) => {
+    dispatch({ type: "cancel-bid", bidId, now: Date.now() });
+    notify("Lance cancelado dentro da janela de 24h.");
+  };
+
+  const saveLot = (lot) => dispatch({ type: "toggle-save", lotId: lot.id });
+
+  const onSimulateWin = (lot) => { closeBid(); navigate("win", lot.id); };
 
   const onSignOut = () => { setLoggedIn(false); navigate("home"); notify("Você saiu da sua conta"); };
   const onSignIn = () => { setLoggedIn(true); notify("Bem-vinda de volta, Camila"); };
@@ -95,53 +127,108 @@ export default function App() {
     onTour: () => setTourOpen(true),
     onMyData: () => navigate("profile"),
     onNotifications: () => setNotifOpen(true),
-    onSignOut, onSignIn,
-    notify,
+    onSignOut, onSignIn, notify,
   };
-
-  const currentLot = useMemo(() => lots.find(l => l.id === route.lotId), [lots, route.lotId]);
 
   const renderScreen = () => {
-    if (route.name === "listing") return <ListingScreen onOpenLot={openLot} category={category} onCategoryChange={setCategory} onBid={openBid} onSave={saveLot} onOpenCompare={openCompare} lots={lots} />;
-    if (route.name === "lot" && currentLot) return <LotDetailScreen lot={currentLot} onBack={() => navigate("listing")} onBid={openBid} onSave={saveLot} />;
-    if (route.name === "win" && currentLot) return <WinScreen lot={currentLot} winValue={route.winValue} onNavigate={navigate} onTour={() => setTourOpen(true)} />;
-    if (route.name === "my-bids") return <MyBidsScreen onOpenLot={openLot} lots={lots} />;
-    if (route.name === "saved") return <SavedScreen onOpenLot={openLot} onBid={openBid} onSave={saveLot} onNavigate={navigate} onCategoryChange={setCategory} lots={lots} />;
-    if (route.name === "profile") return <ProfileScreen onNavigate={navigate} onOpenLot={openLot} lots={lots} />;
-    if (route.name === "history") return <HistoryScreen onOpenLot={openLot} onNavigate={navigate} />;
-    if (route.name === "messages") return <MessagesScreen />;
-    if (route.name === "payments") return <PaymentsScreen notify={notify} />;
-    if (route.name === "settings") return <SettingsScreen theme={theme} onSetTheme={onSetTheme} onSignOut={onSignOut} onOpenPage={openPage} notify={notify} />;
-    if (route.name === "page") return <PageScreen pageId={route.pageId} onNavigate={navigate} onOpenPage={openPage} onTour={() => setTourOpen(true)} />;
-    return <HomeScreen onNavigate={navigate} onTour={() => setTourOpen(true)} onOpenLot={openLot} onCategoryChange={setCategory} onBid={openBid} onSave={saveLot} onOpenPage={openPage} lots={lots} />;
+    switch (route.name) {
+      case "listing":
+        return <ListingScreen onOpenLot={openLot} category={category} onCategoryChange={setCategory} onBid={openBid} onSave={saveLot} onOpenCompare={openCompare} lots={lots} />;
+      case "lot":
+        return currentLot
+          ? <LotDetailScreen lot={currentLot} onBack={() => navigate("listing")} onBid={openBid} onSave={saveLot} />
+          : <NotFound onNavigate={navigate} />;
+      case "win":
+        return currentLot
+          ? <WinScreen lot={currentLot} winValue={minhasApostas.find((e) => e.lot.id === currentLot.id)?.bid.value} onNavigate={navigate} onTour={() => setTourOpen(true)} />
+          : <NotFound onNavigate={navigate} />;
+      case "my-bids":
+        return <MyBidsScreen bids={minhasApostas} onOpenLot={openLot} onBid={openBid} onCancelBid={cancelBid} onNavigate={navigate} />;
+      case "saved":
+        return <SavedScreen onOpenLot={openLot} onBid={openBid} onSave={saveLot} onNavigate={navigate} onCategoryChange={setCategory} lots={lots} />;
+      case "profile":
+        return <ProfileScreen onNavigate={navigate} onOpenLot={openLot} lots={lots} bidsCount={minhasApostas.length} />;
+      case "history":
+        return <HistoryScreen onOpenLot={openLot} onNavigate={navigate} lots={lots} bids={minhasApostas} />;
+      case "messages":
+        return <MessagesScreen />;
+      case "payments":
+        return <PaymentsScreen notify={notify} />;
+      case "settings":
+        return <SettingsScreen theme={theme} onSetTheme={setTheme} onSignOut={onSignOut} onOpenPage={openPage} notify={notify} />;
+      case "page":
+        return <PageScreen pageId={route.pageId} onNavigate={navigate} onOpenPage={openPage} onTour={() => setTourOpen(true)} />;
+      default:
+        return <HomeScreen onNavigate={navigate} onTour={() => setTourOpen(true)} onOpenLot={openLot} onCategoryChange={setCategory} onBid={openBid} onSave={saveLot} onOpenPage={openPage} lots={lots} />;
+    }
   };
+
+  const primeiroLance = userState.bids.filter((b) => !b.canceled).length === 0;
 
   return (
     <>
+      {IS_DEMO && <DemoBanner />}
       <div style={{ minHeight: "100vh" }}>
+        <a href="#conteudo" className="skip-link">Pular para o conteúdo</a>
         <NavB
           route={route.name}
           category={category}
           onNavigate={navigate}
           onCategoryChange={setCategory}
           onTour={() => setTourOpen(true)}
-          onOpenNotifications={() => setNotifOpen(o => !o)}
+          onOpenNotifications={() => setNotifOpen((o) => !o)}
           notificationsOpen={notifOpen}
           theme={theme}
-          onToggleTheme={onToggleTheme}
+          onToggleTheme={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
           account={account}
           lots={lots}
+          now={now}
         />
-        <main>{renderScreen()}</main>
+        <main id="conteudo">
+          <ErrorBoundary onReset={() => navigate("home")}>{renderScreen()}</ErrorBoundary>
+        </main>
         <Footer onOpenPage={openPage} onTour={() => setTourOpen(true)} onNavigate={navigate} />
       </div>
 
-      <BidModal lot={bidLot} open={!!bidLot} onClose={closeBid} onWin={onSimulateWin} isFirstBid={!hasBid} onSeeLot={openLot} />
+      <BidModal
+        lot={bidLot}
+        open={Boolean(bidLot)}
+        onClose={closeBid}
+        onConfirm={confirmBid}
+        onWin={onSimulateWin}
+        onSeeLot={openLot}
+        onSeeMyBids={() => navigate("my-bids")}
+        isFirstBid={primeiroLance}
+        suggestedValue={bidSuggestion}
+      />
       <TourOverlay open={tourOpen} onClose={() => setTourOpen(false)} />
       <NotificationsPanel open={notifOpen} onClose={() => setNotifOpen(false)} />
       <CompareBar onOpen={() => setCompareOpen(true)} hidden={compareOpen} lots={lots} />
       <CompareModal open={compareOpen} onClose={() => setCompareOpen(false)} onBid={(lot) => { setCompareOpen(false); openBid(lot); }} lots={lots} />
       <Toast message={toast} />
     </>
+  );
+}
+
+/** Rota desconhecida ou lote inexistente — antes caía silenciosamente na home. */
+function NotFound({ onNavigate }) {
+  return (
+    <div style={{ maxWidth: 640, margin: "0 auto", padding: "96px 40px", textAlign: "center" }}>
+      <h1 style={{ fontFamily: "var(--serif)", fontSize: 40, fontWeight: 400, margin: "0 0 12px" }}>
+        Não encontramos esse lote.
+      </h1>
+      <p style={{ color: "var(--text-dim)", fontSize: 16, lineHeight: 1.6, margin: "0 0 24px" }}>
+        Ele pode ter saído do catálogo ou o endereço está incorreto.
+      </p>
+      <button
+        onClick={() => onNavigate("listing")}
+        style={{
+          background: "var(--accent)", color: "#15101F", border: "none",
+          borderRadius: 999, padding: "12px 24px", fontSize: 15, fontWeight: 600, cursor: "pointer",
+        }}
+      >
+        Ver leilões abertos
+      </button>
+    </div>
   );
 }

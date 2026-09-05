@@ -1,6 +1,9 @@
 // Lot detail (the hero screen) + Win confirmation.
-import { useState, useMemo, useEffect } from "react";
-import { GLOSSARY, VENDORS, fmtBRL, fmtNum, simulateCost } from "./data.js";
+import { useState, useMemo, useEffect, useId } from "react";
+import { GLOSSARY, VENDORS } from "./data.js";
+import { simulateCost, isEnded, minBidFor, discountPct, referenceValueOf, formatBRL as fmtBRL, formatNumber as fmtNum } from "./domain/auction.js";
+import { useNow, usePageVisible } from "./lib/clock.js";
+import { CONTACT, hasWhatsApp, openExternal } from "./lib/config.js";
 import { Icon, Badge, Button, Countdown, GlossaryTerm, LotPhoto } from "./components.jsx";
 
 // ============================================================
@@ -8,12 +11,16 @@ import { Icon, Badge, Button, Countdown, GlossaryTerm, LotPhoto } from "./compon
 // ============================================================
 export function LotDetailScreen({ lot, onBack, onBid, onSave }) {
   const [tab, setTab] = useState("desc"); // desc | rules | docs | glossary
-  const [simulatorValue, setSimulatorValue] = useState(lot.currentBid + 1000);
+  const [simulatorValue, setSimulatorValue] = useState(() => minBidFor(lot));
+  const simuladorId = useId();
+  const now = useNow();
   const vendor = VENDORS[lot.vendor];
   const isCarro = lot.category === "carro";
-  const breakdown = simulateCost(simulatorValue);
-  const reference = isCarro ? lot.fipe : lot.appraised;
-  const discount = Math.round((1 - lot.currentBid / reference) * 100);
+  // Mesmo simulador do modal e da home, com ITBI só para imóvel (BIZ-007/008).
+  const breakdown = simulateCost(simulatorValue, lot.category);
+  const reference = referenceValueOf(lot);
+  const discount = discountPct(lot);
+  const ended = isEnded(lot, now);
 
   return (
     <div style={{ maxWidth: 1280, margin: "0 auto", padding: "32px 40px 80px", animation: "leiloe-fadein 0.3s ease" }}>
@@ -135,14 +142,16 @@ export function LotDetailScreen({ lot, onBack, onBid, onSave }) {
           <div style={{ padding: 26, background: "var(--surface)", border: "1px solid var(--border-2)", borderRadius: "var(--radius-lg)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
               <div>
-                <div style={{ fontSize: 11, color: "var(--text-mute)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>Lance atual</div>
+                <div style={{ fontSize: 11, color: "var(--text-mute)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 6 }}>{ended ? "Lance final" : "Lance atual"}</div>
                 <div style={{ fontFamily: "var(--mono)", fontSize: 36, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1 }}>
                   {fmtBRL(lot.currentBid)}
                 </div>
-                <div style={{ marginTop: 6, fontSize: 13, color: "var(--text-mute)" }}>
-                  <s>{fmtBRL(reference)}</s> {isCarro ? "FIPE" : "avaliação"}
-                  <span style={{ color: "var(--success-ink)", marginLeft: 8, fontWeight: 500 }}>−{discount}% {isCarro ? "abaixo da FIPE" : "vs. mercado"}</span>
-                </div>
+                {reference !== null && (
+                  <div style={{ marginTop: 6, fontSize: 13, color: "var(--text-mute)" }}>
+                    <s>{fmtBRL(reference)}</s> {isCarro ? "FIPE" : "avaliação"}
+                    {discount !== null && <span style={{ color: "var(--success-ink)", marginLeft: 8, fontWeight: 500 }}>−{discount}% {isCarro ? "abaixo da FIPE" : "vs. mercado"}</span>}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -152,9 +161,18 @@ export function LotDetailScreen({ lot, onBack, onBid, onSave }) {
               <Mini label={<><GlossaryTerm term="lance mínimo">Mínimo</GlossaryTerm></>} value={fmtBRL(lot.minBid)} mono />
             </div>
 
-            <Button variant="primary" size="lg" full onClick={() => onBid(lot)} icon={<Icon.gavel />}>
-              Dar lance
-            </Button>
+            {ended ? (
+              <div role="status" style={{
+                padding: "14px 18px", borderRadius: 14, textAlign: "center",
+                border: "1px dashed var(--border-2)", color: "var(--text-dim)", fontSize: 14,
+              }}>
+                Leilão encerrado — não é possível dar lances.
+              </div>
+            ) : (
+              <Button variant="primary" size="lg" full onClick={() => onBid(lot)} icon={<Icon.gavel />}>
+                Dar lance
+              </Button>
+            )}
             <button onClick={() => onSave(lot)} style={{
               marginTop: 10, width: "100%",
               background: "transparent", border: "1px solid var(--border-2)",
@@ -166,22 +184,25 @@ export function LotDetailScreen({ lot, onBack, onBid, onSave }) {
           </div>
 
           {/* Cost simulator */}
-          <div style={{ padding: 22, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)" }}>
+          <div data-testid="simulador-custo" style={{ padding: 22, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
               <div style={{ fontSize: 11, color: "var(--text-mute)", textTransform: "uppercase", letterSpacing: "0.12em" }}>Simulador de custo</div>
               <Badge tone="accent">novidade</Badge>
             </div>
-            <div style={{ fontSize: 12.5, color: "var(--text-dim)", marginBottom: 12 }}>Se você desse este lance:</div>
+            <label htmlFor={simuladorId} style={{ display: "block", fontSize: 12.5, color: "var(--text-dim)", marginBottom: 12 }}>Se você desse este lance:</label>
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 10 }}>
-              <span style={{ fontFamily: "var(--mono)", color: "var(--text-mute)", fontSize: 14 }}>R$</span>
-              <input type="number" value={simulatorValue} onChange={(e) => setSimulatorValue(Number(e.target.value) || 0)}
+              <span aria-hidden="true" style={{ fontFamily: "var(--mono)", color: "var(--text-mute)", fontSize: 14 }}>R$</span>
+              <input id={simuladorId} type="number" min={0} value={simulatorValue} onChange={(e) => setSimulatorValue(Math.max(0, Number(e.target.value) || 0))}
                 style={{ background: "transparent", border: "none", outline: "none", color: "var(--text)", fontFamily: "var(--mono)", fontSize: 20, fontWeight: 600, flex: 1, minWidth: 0 }} />
             </div>
             <div style={{ marginTop: 16, fontSize: 13 }}>
-              <SimRow label="Seu lance" value={breakdown.lance} />
-              <SimRow label={<>+ Comissão (5%)</>} value={breakdown.comissao} />
-              <SimRow label={<>+ <GlossaryTerm term="ITBI">ITBI</GlossaryTerm> (3%)</>} value={breakdown.itbi} />
-              <SimRow label={<>+ Cartório</>} value={breakdown.registro} />
+              {breakdown.lines.map((l) => (
+                <SimRow key={l.key} value={l.value} label={
+                  l.key === "lance" ? l.label
+                  : l.key === "itbi" ? <>+ <GlossaryTerm term="ITBI">ITBI</GlossaryTerm> estimado (3%)</>
+                  : `+ ${l.label}`
+                } />
+              ))}
               <div style={{ height: 1, background: "var(--border)", margin: "8px 0" }} />
               <SimRow label="Total" value={breakdown.total} total />
             </div>
@@ -291,16 +312,19 @@ function Gallery({ lot, onSave }) {
   const [idx, setIdx] = useState(0);
   const [auto, setAuto] = useState(true);
   const thumbs = [0, 1, 2, 3];
-  // Auto-advance every 3.5s when in auto mode
+  const visible = usePageVisible();
+  // Avança a cada 3,5s no modo automático — suspenso com a aba oculta e para
+  // quem pediu menos movimento no sistema.
   useEffect(() => {
-    if (!auto) return;
+    if (!auto || !visible) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return;
     const id = setInterval(() => setIdx(i => (i + 1) % thumbs.length), 3500);
     return () => clearInterval(id);
-  }, [auto, thumbs.length]);
+  }, [auto, visible, thumbs.length]);
   return (
     <div>
       <div style={{ position: "relative" }}>
-        <LotPhoto lot={lot} height={460} rounded="var(--radius-lg)" showBadges photoIndex={idx}>
+        <LotPhoto lot={lot} height={460} rounded="var(--radius-lg)" showBadges photoIndex={idx} context="hero">
           <div style={{ position: "absolute", bottom: 14, left: 14, display: "flex", gap: 8 }}>
             <Badge tone="dark">Foto {idx + 1} de {thumbs.length}</Badge>
             {auto && <Badge tone="dark"><span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)", animation: "leiloe-pulse 1.4s infinite", display: "inline-block" }} /> auto</Badge>}
@@ -325,12 +349,21 @@ function Gallery({ lot, onSave }) {
       </div>
       <div style={{ display: "grid", gridTemplateColumns: `repeat(${thumbs.length}, 1fr)`, gap: 10, marginTop: 10 }}>
         {thumbs.map(i => (
-          <button key={i} onClick={() => { setAuto(false); setIdx(i); }} style={{
-            position: "relative", padding: 0, border: "none", cursor: "pointer", borderRadius: 8, overflow: "hidden",
-            outline: idx === i ? "2px solid var(--accent)" : "1px solid var(--border)",
-            outlineOffset: idx === i ? -2 : -1,
-          }}>
-            <LotPhoto lot={lot} height={70} rounded="0" showBadges={false} photoIndex={i} />
+          // A miniatura só contém a imagem decorativa da galeria; sem rótulo
+          // explícito o leitor de tela anunciava quatro botões sem nome (axe:
+          // button-name, crítico).
+          <button
+            key={i}
+            type="button"
+            onClick={() => { setAuto(false); setIdx(i); }}
+            aria-label={`Ver foto ${i + 1} de ${thumbs.length}`}
+            aria-current={idx === i ? "true" : undefined}
+            style={{
+              position: "relative", padding: 0, border: "none", cursor: "pointer", borderRadius: 8, overflow: "hidden",
+              outline: idx === i ? "2px solid var(--accent)" : "1px solid var(--border)",
+              outlineOffset: idx === i ? -2 : -1,
+            }}>
+            <LotPhoto lot={lot} height={70} rounded="0" showBadges={false} photoIndex={i} context="thumb" />
           </button>
         ))}
       </div>
@@ -354,7 +387,7 @@ function navArrowStyle(side) {
 // ============================================================
 // WIN — Arremate confirmation + post-bid checklist
 // ============================================================
-export function WinScreen({ lot, winValue, onNavigate, onTour }) {
+export function WinScreen({ lot, winValue, onNavigate }) {
   const [done, setDone] = useState({ pay: false, contract: false, itbi: false, key: false, confirm: false });
   const allDone = Object.values(done).every(Boolean);
 
@@ -401,9 +434,11 @@ export function WinScreen({ lot, winValue, onNavigate, onTour }) {
               <div style={{ fontFamily: "var(--serif)", fontSize: 26, letterSpacing: "-0.01em", lineHeight: 1.15 }}>Seu passo a passo</div>
               <div style={{ fontSize: 13, color: "var(--text-mute)", marginTop: 4 }}>{Object.values(done).filter(Boolean).length} de 5 concluídos · entrega prevista em {VENDORS[lot.vendor].avgKeyHandover}</div>
             </div>
-            <a href="#" style={{ fontSize: 13, color: "var(--accent-ink)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>
-              <Icon.whatsapp size={14} /> Falar com suporte
-            </a>
+            {hasWhatsApp() && (
+              <button type="button" onClick={() => openExternal(CONTACT.whatsappUrl)} style={{ fontSize: 13, color: "var(--accent-ink)", background: "none", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <Icon.whatsapp size={14} /> Falar com suporte
+              </button>
+            )}
           </div>
 
           <ChecklistItem n="1" done={done.pay} onToggle={() => setDone(d => ({ ...d, pay: !d.pay }))}
@@ -469,14 +504,17 @@ function ChecklistItem({ n, title, body, done, onToggle, deadline, last }) {
 }
 
 function Confetti() {
+  // Sequência determinística: mantém o render puro (sem Math.random durante o
+  // render) e torna a tela reproduzível em teste e captura de tela.
   const pieces = useMemo(() => {
+    const rand = (n) => ((Math.sin(n * 12.9898) * 43758.5453) % 1 + 1) % 1;
     return [...Array(36)].map((_, i) => ({
-      x: Math.random() * 100,
-      delay: Math.random() * 1.6,
-      duration: 2.4 + Math.random() * 2,
+      x: rand(i + 1) * 100,
+      delay: rand(i + 2) * 1.6,
+      duration: 2.4 + rand(i + 3) * 2,
       color: ["#B59FF0", "#7BE0B0", "#FFC07A", "#FF8E72", "#F4F1E8"][i % 5],
-      size: 6 + Math.random() * 8,
-      rotation: Math.random() * 360,
+      size: 6 + rand(i + 4) * 8,
+      rotation: rand(i + 5) * 360,
     }));
   }, []);
   return (

@@ -1,7 +1,16 @@
-// Sample data for the Leiloaê app.
-// All numbers fictional. Imóveis em SP até R$250k.
 
-export const GLOSSARY = {
+// Catálogo de demonstração do Leiloaê.
+//
+// Valores fictícios. Os prazos são instantes ABSOLUTOS derivados de uma agenda
+// fixa (ver domain/schedule.js): estáveis entre recargas e iguais para todos os
+// usuários, ao contrário do `Date.now() + Xh` avaliado na importação (BIZ-003).
+import { scheduledEnd, closedAt } from "./domain/schedule.js";
+
+// Instante de carga da aplicação: fixa a agenda para toda a sessão, de modo que
+// um lote que encerra durante a navegação permaneça encerrado.
+const BOOT = Date.now();
+
+const BASE_GLOSSARY = {
   "praceamento": "Cada uma das etapas em que um imóvel é colocado à venda em leilão judicial. Costuma ter 1ª praça (preço cheio) e 2ª praça (com desconto).",
   "praça": "Cada tentativa de venda do imóvel no leilão judicial. 1ª praça sai pelo preço de avaliação; 2ª praça já vem com desconto.",
   "hasta pública": "Outro nome para leilão judicial — venda de bens determinada pela justiça.",
@@ -69,7 +78,7 @@ export const VENDORS = {
   },
 };
 
-export const LOTS = [
+const PROPERTY_LOTS = [
   {
     id: "lot-mooca-studio",
     category: "imovel",
@@ -90,11 +99,10 @@ export const LOTS = [
     minBid: 138000,
     currentBid: 142500,
     bids: 14,
-    endsAt: Date.now() + 1000 * 60 * 60 * 2 + 1000 * 60 * 14, // 2h 14m
+    endsAt: scheduledEnd(6, BOOT),
     vendor: "vendor-bb",
     photo: "linear-gradient(135deg, #6E5BA3 0%, #2A1F45 60%, #15101F 100%)",
     glyph: "studio",
-    hot: false,
     saved: false,
     description: "Studio compacto e bem distribuído na Mooca, próximo ao metrô Bresser-Mooca. Imóvel desocupado, pronto pra reforma leve ou aluguel imediato. Condomínio R$ 380/mês.",
     docs: ["Matrícula atualizada (jun/2025)", "Laudo de avaliação", "Certidão de ônus", "Convenção do condomínio"],
@@ -120,11 +128,10 @@ export const LOTS = [
     minBid: 152000,
     currentBid: 156700,
     bids: 31,
-    endsAt: Date.now() + 1000 * 60 * 23, // 23 min — HOT
+    endsAt: scheduledEnd(2, BOOT),
     vendor: "vendor-bb",
     photo: "linear-gradient(135deg, #B59FF0 0%, #5A3FA0 50%, #2A1F45 100%)",
     glyph: "studio",
-    hot: true,
     saved: true,
     description: "Studio novo, 12º andar, vista livre. Edifício com piscina e academia. Estação Tatuapé a 6 min a pé. Vaga coberta.",
     docs: ["Matrícula", "Habite-se", "Laudo", "Convenção"],
@@ -150,11 +157,10 @@ export const LOTS = [
     minBid: 170000,
     currentBid: 178500,
     bids: 22,
-    endsAt: Date.now() + 1000 * 60 * 60 * 32, // 1d 8h
+    endsAt: scheduledEnd(30, BOOT),
     vendor: "vendor-vara",
     photo: "linear-gradient(135deg, #FF8E72 0%, #8E4A36 50%, #2A1A14 100%)",
     glyph: "apto",
-    hot: false,
     saved: false,
     description: "2 dormitórios bem ventilados, sala ampla, cozinha americana. Imóvel atualmente com inquilino — contrato encerra em set/2026. Próximo ao metrô Penha.",
     docs: ["Matrícula", "Edital", "Laudo de avaliação judicial", "Contrato de locação vigente"],
@@ -180,11 +186,10 @@ export const LOTS = [
     minBid: 192000,
     currentBid: 198000,
     bids: 8,
-    endsAt: Date.now() + 1000 * 60 * 60 * 4 + 1000 * 60 * 30, // 4h 30m
+    endsAt: scheduledEnd(10, BOOT),
     vendor: "vendor-vara",
     photo: "linear-gradient(135deg, #7BE0B0 0%, #2D6E55 50%, #15291F 100%)",
     glyph: "casa",
-    hot: false,
     saved: false,
     description: "Casa térrea, 2 dormitórios, quintal pequeno. Imóvel ocupado pelo antigo dono — pode exigir ação de imissão de posse após arremate. Boa relação preço/m².",
     docs: ["Matrícula", "Edital", "Laudo"],
@@ -210,11 +215,10 @@ export const LOTS = [
     minBid: 95000,
     currentBid: 98500,
     bids: 5,
-    endsAt: Date.now() + 1000 * 60 * 60 * 49,
+    endsAt: closedAt(2, BOOT),   // encerrado há 2 dias — exercita o estado "Encerrado"
     vendor: "vendor-justi",
     photo: "linear-gradient(135deg, #FFC07A 0%, #9C6A2A 50%, #2A1D10 100%)",
     glyph: "studio",
-    hot: false,
     saved: false,
     description: "Kitnet no coração da Liberdade, prédio antigo bem conservado. Metrô a 2 quadras. Ideal pra aluguel de temporada ou estudante.",
     docs: ["Matrícula", "Laudo", "Convenção"],
@@ -240,11 +244,10 @@ export const LOTS = [
     minBid: 208000,
     currentBid: 215000,
     bids: 12,
-    endsAt: Date.now() + 1000 * 60 * 60 * 6,
+    endsAt: scheduledEnd(14, BOOT),
     vendor: "vendor-bb",
     photo: "linear-gradient(135deg, #FF7AB8 0%, #8A3A6E 50%, #2A1525 100%)",
     glyph: "apto",
-    hot: false,
     saved: false,
     description: "2 dormitórios, varanda gourmet, lazer completo. Vaga demarcada. Próximo ao metrô Vila Prudente.",
     docs: ["Matrícula", "Habite-se", "Laudo", "Convenção"],
@@ -270,11 +273,10 @@ export const LOTS = [
     minBid: 128000,
     currentBid: 132000,
     bids: 7,
-    endsAt: Date.now() + 1000 * 60 * 60 * 38,
+    endsAt: scheduledEnd(34, BOOT),
     vendor: "vendor-justi",
     photo: "linear-gradient(135deg, #6EE7E0 0%, #2A6E70 50%, #0F2929 100%)",
     glyph: "studio",
-    hot: false,
     saved: false,
     description: "Studio em prédio novo, lazer completo, ao lado da estação Brás. Imóvel pronto pra morar ou alugar.",
     docs: ["Matrícula", "Habite-se", "Laudo"],
@@ -300,11 +302,10 @@ export const LOTS = [
     minBid: 162000,
     currentBid: 168900,
     bids: 18,
-    endsAt: Date.now() + 1000 * 60 * 60 * 8,
+    endsAt: scheduledEnd(18, BOOT),
     vendor: "vendor-vara",
     photo: "linear-gradient(135deg, #F4A8FF 0%, #8E3FA5 50%, #2A1530 100%)",
     glyph: "apto",
-    hot: false,
     saved: false,
     description: "2 dormitórios próximo ao Shopping Itaquera e estação. Imóvel desocupado, em bom estado.",
     docs: ["Matrícula", "Edital", "Laudo"],
@@ -312,13 +313,13 @@ export const LOTS = [
   },
 ];
 
-// --- Glossary additions for cars ---
-Object.assign(GLOSSARY, {
+// Termos específicos de veículos, compostos ao glossário base sem mutação.
+const CAR_GLOSSARY = {
   "FIPE": "Tabela FIPE é a referência oficial de preço médio de veículos no Brasil. É contra ela que se mede se um carro está barato.",
   "DPVAT": "Seguro obrigatório cobrado anualmente. No leilão de carros, você pode pegar o veículo com DPVAT em atraso — verifique antes.",
   "IPVA": "Imposto anual de veículos. Em leilões, IPVA atrasado costuma ser quitado pelo banco — mas confirme no edital.",
   "sinistro pequeno": "Carro que sofreu acidente leve. Estrutura intacta, reparos só na lataria. Pode rodar normalmente após vistoria.",
-});
+};
 
 const CAR_LOTS = [
   {
@@ -330,10 +331,10 @@ const CAR_LOTS = [
     plate: "ABC-1A23", licensingState: "SP",
     condition: "Sem sinistro",
     appraised: 92000, minBid: 58000, currentBid: 61500, bids: 19,
-    endsAt: Date.now() + 1000 * 60 * 60 * 3 + 1000 * 60 * 40,
+    endsAt: scheduledEnd(8, BOOT),
     vendor: "vendor-santander",
     photo: "linear-gradient(135deg, #B59FF0 0%, #5A3FA0 50%, #2A1F45 100%)",
-    glyph: "sedan", hot: false, saved: false,
+    glyph: "sedan", saved: false,
     address: "Pátio Santander — Taboão da Serra", city: "São Paulo", region: "Grande SP",
     auctionType: "Extrajudicial", praca: "Única",
     description: "Civic EXL 2019 em ótimo estado, segundo dono, revisões em concessionária. Sem sinistro. Pneus em bom estado.",
@@ -350,10 +351,10 @@ const CAR_LOTS = [
     plate: "DEF-4B56", licensingState: "SP",
     condition: "Sem sinistro",
     appraised: 65000, minBid: 42000, currentBid: 44800, bids: 11,
-    endsAt: Date.now() + 1000 * 60 * 60 * 18,
+    endsAt: scheduledEnd(22, BOOT),
     vendor: "vendor-copart",
     photo: "linear-gradient(135deg, #6EE7E0 0%, #2A6E70 50%, #0F2929 100%)",
-    glyph: "hatch", hot: false, saved: false,
+    glyph: "hatch", saved: false,
     address: "Pátio Copart — Itaquaquecetuba", city: "São Paulo", region: "Grande SP",
     auctionType: "Extrajudicial", praca: "Única",
     description: "HB20 Comfort Plus 2021, baixa quilometragem, primeira dona. Sem sinistro, sem débitos. Manutenções em dia.",
@@ -370,10 +371,10 @@ const CAR_LOTS = [
     plate: "GHI-7C89", licensingState: "SP",
     condition: "Sinistro pequeno",
     appraised: 58000, minBid: 31000, currentBid: 34500, bids: 23,
-    endsAt: Date.now() + 1000 * 60 * 47,
+    endsAt: scheduledEnd(4, BOOT),
     vendor: "vendor-copart",
     photo: "linear-gradient(135deg, #FF8E72 0%, #8E4A36 50%, #2A1A14 100%)",
-    glyph: "hatch", hot: true, saved: false,
+    glyph: "hatch", saved: false,
     address: "Pátio Copart — Guarulhos", city: "São Paulo", region: "Grande SP",
     auctionType: "Extrajudicial", praca: "Única",
     description: "Onix LT 2020 com sinistro leve na lateral direita — reparo estético. Roda normalmente. Vistoria já aprovada.",
@@ -390,10 +391,10 @@ const CAR_LOTS = [
     plate: "JKL-2D34", licensingState: "SP",
     condition: "Sem sinistro",
     appraised: 98000, minBid: 64000, currentBid: 68900, bids: 27,
-    endsAt: Date.now() + 1000 * 60 * 60 * 8,
+    endsAt: scheduledEnd(26, BOOT),
     vendor: "vendor-santander",
     photo: "linear-gradient(135deg, #F4A8FF 0%, #8E3FA5 50%, #2A1530 100%)",
-    glyph: "sedan", hot: false, saved: true,
+    glyph: "sedan", saved: true,
     address: "Pátio Santander — Osasco", city: "São Paulo", region: "Grande SP",
     auctionType: "Extrajudicial", praca: "Única",
     description: "Corolla XEi 2018, sedan top de linha. Sem sinistro, segundo dono, todas revisões feitas em concessionária.",
@@ -410,10 +411,10 @@ const CAR_LOTS = [
     plate: "MNO-5E67", licensingState: "SP",
     condition: "Sem sinistro",
     appraised: 128000, minBid: 82000, currentBid: 88500, bids: 14,
-    endsAt: Date.now() + 1000 * 60 * 60 * 26,
+    endsAt: scheduledEnd(38, BOOT),
     vendor: "vendor-copart",
     photo: "linear-gradient(135deg, #FFC07A 0%, #9C6A2A 50%, #2A1D10 100%)",
-    glyph: "suv", hot: false, saved: false,
+    glyph: "suv", saved: false,
     address: "Pátio Copart — Itaquaquecetuba", city: "São Paulo", region: "Grande SP",
     auctionType: "Extrajudicial", praca: "Única",
     description: "Tracker Premier 2022 top de linha, baixa rodagem. SUV completo, teto solar, multimídia, câmera de ré.",
@@ -430,10 +431,10 @@ const CAR_LOTS = [
     plate: "PQR-8F90", licensingState: "SP",
     condition: "Sem sinistro",
     appraised: 42000, minBid: 24000, currentBid: 26800, bids: 9,
-    endsAt: Date.now() + 1000 * 60 * 60 * 52,
+    endsAt: scheduledEnd(42, BOOT),
     vendor: "vendor-bb",
     photo: "linear-gradient(135deg, #FF7AB8 0%, #8A3A6E 50%, #2A1525 100%)",
-    glyph: "hatch", hot: false, saved: false,
+    glyph: "hatch", saved: false,
     address: "Pátio BB — Santo André", city: "São Paulo", region: "ABC",
     auctionType: "Extrajudicial", praca: "Única",
     description: "Mobi Like 2020, ideal pra cidade, baixo consumo. Sem sinistro. IPVA 2025 em aberto.",
@@ -443,60 +444,9 @@ const CAR_LOTS = [
   },
 ];
 
-LOTS.push(...CAR_LOTS);
-
-// Format helpers
-export const fmtBRL = (n, withCents = false) => {
-  if (n == null || isNaN(n)) return "—";
-  return n.toLocaleString("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    minimumFractionDigits: withCents ? 2 : 0,
-    maximumFractionDigits: withCents ? 2 : 0,
-  });
-};
-
-export const fmtNum = (n) => n.toLocaleString("pt-BR");
-
-export const fmtTimeLeft = (ms) => {
-  if (ms <= 0) return { text: "Encerrado", short: "00:00", hot: false, ended: true };
-  const totalSec = Math.floor(ms / 1000);
-  const d = Math.floor(totalSec / 86400);
-  const h = Math.floor((totalSec % 86400) / 3600);
-  const m = Math.floor((totalSec % 3600) / 60);
-  const s = totalSec % 60;
-  let text, short;
-  if (d > 0) {
-    text = `${d}d ${h}h ${m}min`;
-    short = `${d}d ${h}h`;
-  } else if (h > 0) {
-    text = `${h}h ${m}min ${String(s).padStart(2, "0")}s`;
-    short = `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-  } else {
-    text = `${m}min ${String(s).padStart(2, "0")}s`;
-    short = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-  }
-  return { text, short, hot: totalSec < 3600, ended: false, d, h, m, s };
-};
-
-// Cost simulator — given lance, returns full breakdown.
-// Taxa Leiloaê = 1.5% (commission take rate from the product model)
-export function simulateCost(lance) {
-  if (!lance || lance <= 0) {
-    return { lance: 0, comissao: 0, taxa: 0, itbi: 0, registro: 0, total: 0 };
-  }
-  const comissao = lance * 0.05;          // 5% leiloeiro
-  const taxa = lance * 0.015;             // 1.5% taxa Leiloaê
-  const itbi = lance * 0.03;              // 3% ITBI SP (só aplica a imóveis, mas mantemos no breakdown)
-  const registro = 2800;                  // ~taxa de registro/escritura (estimativa fixa)
-  const total = lance + comissao + taxa + itbi + registro;
-  return { lance, comissao, taxa, itbi, registro, total };
-}
-
-// --- Real photos per lot (Unsplash) ---
-// 4 shots per imóvel (sala/cozinha/quarto/fachada) and 3 por veículo (frente/lateral/interior).
-const _img = (id) => `https://images.unsplash.com/photo-${id}?auto=format&fit=crop&w=1100&q=70`;
-const LOT_PHOTOS = {
+// --- Fotos por lote (banco de imagens; ilustrativas em modo demonstração) ---
+// 4 por imóvel (sala/cozinha/quarto/fachada), 3 por veículo (frente/lateral/interior).
+const LOT_PHOTO_IDS = {
   "lot-mooca-studio":     ["1522708323590-d24dbb6b0267", "1484154218962-a197022b5858", "1505693416388-ac5ce068fe85", "1502672260266-1c1ef2d93688"],
   "lot-tatuape-studio":   ["1545324418-cc1a3fa10c00", "1556911220-bff31c812dba", "1560185007-cde436f6a4d0", "1493809842364-78817add7ffb"],
   "lot-penha-apto":       ["1560448204-e02f11c3d0e2", "1556909114-f6e7ad7d3136", "1505691938895-1758d7feb511", "1502005097973-6a7082348e28"],
@@ -512,4 +462,19 @@ const LOT_PHOTOS = {
   "car-tracker":          ["1583121274602-3e2820c69888", "1533473359331-0135ef1b58bf", "1606152421802-db97b9c7a11b"],
   "car-fiat-mobi":        ["1541899481282-d53bffe3c35d", "1502877338535-766e1452684a", "1549317661-bd32c8ce0db2"],
 };
-LOTS.forEach((l) => { l.photos = (LOT_PHOTOS[l.id] || []).map(_img); });
+
+/**
+ * Catálogo completo, montado de forma pura (ARCH-008).
+ * Antes o módulo empurrava carros no array e mutava cada lote na importação,
+ * o que tornava a ordem de import relevante e o dado compartilhado mutável.
+ */
+export const GLOSSARY = { ...BASE_GLOSSARY, ...CAR_GLOSSARY };
+
+export const LOTS = [...PROPERTY_LOTS, ...CAR_LOTS].map((lot) => ({
+  ...lot,
+  photoIds: LOT_PHOTO_IDS[lot.id] || [],
+}));
+
+// Formatadores e simulador vivem no domínio; reexportados para compatibilidade
+// com os consumidores existentes (regra de preservação de contrato).
+export { simulateCost, formatBRL as fmtBRL, formatNumber as fmtNum, timeLeft as fmtTimeLeft } from "./domain/auction.js";

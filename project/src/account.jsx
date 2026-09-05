@@ -1,5 +1,5 @@
 // Account area: Meus dados (perfil), Toast.
-import { useState } from "react";
+import { useState, useId } from "react";
 import { LOTS } from "./data.js";
 import { SectionHead, Button, Badge, Icon } from "./components.jsx";
 
@@ -26,14 +26,14 @@ export const notify = (msg) => window.dispatchEvent(new CustomEvent("leiloe:toas
 // ====================================================================
 // MEUS DADOS — profile / account
 // ====================================================================
-export function ProfileScreen({ onNavigate, onOpenLot, lots = LOTS }) {
+export function ProfileScreen({ onNavigate, lots = LOTS, bidsCount = 0, winsCount = 0 }) {
   const [prefs, setPrefs] = useState({ outbid: true, ending: true, newLots: false, email: true });
   const togglePref = (k) => setPrefs(p => ({ ...p, [k]: !p[k] }));
   const saved = lots.filter(l => l.saved);
 
   return (
     <div style={{ maxWidth: 1080, margin: "0 auto", padding: "40px 40px 120px", animation: "leiloe-fadein 0.3s ease" }}>
-      <SectionHead overline="Conta" title="Meus dados" subtitle="Suas informações, verificação e preferências de notificação." />
+      <SectionHead as="h1" overline="Conta" title="Meus dados" subtitle="Suas informações, verificação e preferências de notificação." />
 
       <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 28, alignItems: "flex-start" }}>
         {/* LEFT — identity card */}
@@ -51,8 +51,8 @@ export function ProfileScreen({ onNavigate, onOpenLot, lots = LOTS }) {
               <Badge tone="success"><Icon.check size={11} /> Identidade verificada</Badge>
             </div>
             <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-around", fontSize: 12 }}>
-              <div><div style={{ fontFamily: "var(--mono)", fontSize: 18, color: "var(--text)" }}>3</div><div style={{ color: "var(--text-mute)" }}>lances</div></div>
-              <div><div style={{ fontFamily: "var(--mono)", fontSize: 18, color: "var(--text)" }}>1</div><div style={{ color: "var(--text-mute)" }}>arremate</div></div>
+              <div><div style={{ fontFamily: "var(--mono)", fontSize: 18, color: "var(--text)" }}>{bidsCount}</div><div style={{ color: "var(--text-mute)" }}>{bidsCount === 1 ? "lance" : "lances"}</div></div>
+              <div><div style={{ fontFamily: "var(--mono)", fontSize: 18, color: "var(--text)" }}>{winsCount}</div><div style={{ color: "var(--text-mute)" }}>{winsCount === 1 ? "arremate" : "arremates"}</div></div>
               <div><div style={{ fontFamily: "var(--mono)", fontSize: 18, color: "var(--text)" }}>{saved.length}</div><div style={{ color: "var(--text-mute)" }}>salvos</div></div>
             </div>
           </div>
@@ -152,18 +152,26 @@ function PayRow({ icon, title, detail, tag, last }) {
 }
 
 function ToggleRow({ label, checked, onChange, last }) {
+  const id = useId();
   return (
-    <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, padding: "13px 0", borderBottom: last ? "none" : "1px solid var(--border)", cursor: "pointer" }}>
-      <span style={{ fontSize: 14, color: "var(--text-dim)" }}>{label}</span>
-      <span onClick={onChange} style={{
-        width: 40, height: 23, borderRadius: 999, flexShrink: 0, position: "relative",
-        background: checked ? "var(--accent)" : "var(--surface-3)", transition: "background 0.18s ease",
-      }}>
-        <span style={{
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, padding: "13px 0", borderBottom: last ? "none" : "1px solid var(--border)" }}>
+      <label htmlFor={id} style={{ fontSize: 14, color: "var(--text-dim)", cursor: "pointer" }}>{label}</label>
+      <button
+        id={id}
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={onChange}
+        style={{
+          width: 40, height: 23, borderRadius: 999, flexShrink: 0, position: "relative", border: "none", padding: 0,
+          background: checked ? "var(--accent)" : "var(--surface-3)", transition: "background 0.18s ease", cursor: "pointer",
+        }}
+      >
+        <span aria-hidden="true" style={{
           position: "absolute", top: 3, left: checked ? 20 : 3, width: 17, height: 17, borderRadius: "50%",
           background: checked ? "#15101F" : "var(--text-mute)", transition: "left 0.18s ease",
         }} />
-      </span>
-    </label>
+      </button>
+    </div>
   );
 }

@@ -1,9 +1,14 @@
 // Global footer ("batente") + all the pages it links to.
 // Brand voice: plain Portuguese, anti-juridiquês, warm. All content fictional.
-import { useState, useMemo } from "react";
+import { useState, useMemo, useId } from "react";
 import { GLOSSARY } from "./data.js";
+import { simulateCost, RATES, formatBRL as fmtBRL } from "./domain/auction.js";
 import { Icon, Button } from "./components.jsx";
 import { Wordmark } from "./nav.jsx";
+import { IS_DEMO, CONTACT, COMPANY, CONTACT_FORM_ENDPOINT, hasWhatsApp, openExternal } from "./lib/config.js";
+import { DemoNotice } from "./ui/DemoBanner.jsx";
+
+/** Aviso de conteúdo de demonstração usado nas páginas jurídicas (SEC-001). */
 
 // =====================================================================
 // FOOTER
@@ -38,7 +43,7 @@ export function Footer({ onOpenPage, onTour, onNavigate }) {
       head: "Suporte",
       links: [
         { label: "Central de ajuda", go: () => onOpenPage("ajuda") },
-        { label: "WhatsApp",         go: () => { window.open("https://wa.me/5511999999999", "_blank"); window.dispatchEvent(new CustomEvent("leiloe:toast", { detail: "Abrindo conversa no WhatsApp…" })); } },
+        ...(hasWhatsApp() ? [{ label: "WhatsApp", go: () => openExternal(CONTACT.whatsappUrl) }] : []),
         { label: "Fale com a gente", go: () => onOpenPage("contato") },
       ],
     },
@@ -78,7 +83,9 @@ export function Footer({ onOpenPage, onTour, onNavigate }) {
       </div>
       <div style={{ borderTop: "1px solid var(--border)" }}>
         <div style={{ maxWidth: 1280, margin: "0 auto", padding: "20px 40px", fontSize: 11.5, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-mute)", fontFamily: "var(--mono)" }}>
-          Leiloaê · CNPJ Fictício 00.000.000/0001-00 · Atendimento via WhatsApp
+          {IS_DEMO
+            ? "Leiloaê · Protótipo de demonstração · Empresa, documentos e canais fictícios"
+            : [COMPANY.legalName, COMPANY.cnpj && `CNPJ ${COMPANY.cnpj}`].filter(Boolean).join(" · ")}
         </div>
       </div>
     </footer>
@@ -231,7 +238,9 @@ function Imprensa({ onBack }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 40 }}>
         <Card>
           <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>Contato de imprensa</div>
-          <div style={{ fontSize: 14, color: "var(--text-dim)", lineHeight: 1.6 }}>imprensa@leiloae.com.br<br/>Resposta em até 1 dia útil.</div>
+          <div style={{ fontSize: 14, color: "var(--text-dim)", lineHeight: 1.6 }}>
+            {CONTACT.pressEmail || "Canal de imprensa não disponível nesta demonstração."}
+          </div>
         </Card>
         <Card style={{ display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
           <div>
@@ -306,10 +315,10 @@ function BlogPage({ onBack }) {
     { cat: "História real", title: "Comprei meu primeiro apê em leilão aos 26", read: "4 min" },
     { cat: "Guia", title: "Matrícula do imóvel: o que checar antes de dar lance", read: "6 min" },
   ];
-  const open = (t) => window.dispatchEvent(new CustomEvent("leiloe:toast", { detail: "Artigo completo — em breve!" }));
+  const open = () => window.dispatchEvent(new CustomEvent("leiloe:toast", { detail: "Artigo completo — em breve!" }));
   return (
     <PageShell overline="Blog" title="Leilão explicado, post a post." subtitle="Guias, histórias reais e o passo a passo que ninguém te conta sobre arrematar imóvel e carro." onBack={onBack} max={1040}>
-      <button onClick={() => open(featured.title)} style={{
+      <button onClick={open} style={{
         display: "block", width: "100%", textAlign: "left", cursor: "pointer", marginBottom: 28,
         background: "linear-gradient(135deg, var(--accent-dim) 0%, var(--surface) 70%)",
         border: "1px solid var(--border-2)", borderRadius: "var(--radius-lg)", padding: 32, color: "inherit",
@@ -321,7 +330,7 @@ function BlogPage({ onBack }) {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
         {posts.map(p => (
-          <button key={p.title} onClick={() => open(p.title)} style={{
+          <button key={p.title} onClick={open} style={{
             display: "flex", flexDirection: "column", gap: 12, textAlign: "left", cursor: "pointer", minHeight: 168,
             background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, padding: "22px 22px", color: "inherit",
             transition: "border-color 0.15s ease",
@@ -362,7 +371,12 @@ function DocSection({ n, title, summary, children }) {
 
 function TermosPage({ onBack }) {
   return (
-    <PageShell overline="Termos de uso" title="Termos de uso." subtitle="Última atualização: 12 de fevereiro de 2025. Documento fictício, para fins de demonstração." onBack={onBack} max={740}>
+    <PageShell overline="Termos de uso" title="Termos de uso." subtitle="Modelo de referência para a demonstração do produto." onBack={onBack} max={740}>
+      <DemoNotice>
+        <b>Este texto é fictício e não tem validade jurídica.</b> Serve para mostrar como as
+        regras seriam comunicadas em português claro. O Leiloaê é um protótipo: não há
+        contrato, serviço contratável nem relação de consumo.
+      </DemoNotice>
       <DocSection n="01" title="O que é o Leiloaê" summary="Somos uma vitrine que organiza e explica leilões — não somos o leiloeiro.">
         O Leiloaê é uma plataforma que reúne, traduz e organiza informações de leilões judiciais e extrajudiciais de imóveis e veículos. A venda em si é conduzida pelo leiloeiro ou órgão responsável indicado em cada lote.
       </DocSection>
@@ -384,7 +398,12 @@ function TermosPage({ onBack }) {
 
 function PrivacidadePage({ onBack }) {
   return (
-    <PageShell overline="Privacidade" title="Política de privacidade." subtitle="Última atualização: 12 de fevereiro de 2025. Documento fictício, para fins de demonstração." onBack={onBack} max={740}>
+    <PageShell overline="Privacidade" title="Política de privacidade." subtitle="Modelo de referência para a demonstração do produto." onBack={onBack} max={740}>
+      <DemoNotice>
+        <b>Este texto é fictício.</b> Na demonstração não há coleta, transmissão ou
+        armazenamento de dados pessoais: favoritos e lances ficam apenas no seu navegador
+        e nenhum formulário envia informação para servidor algum.
+      </DemoNotice>
       <DocSection n="01" title="Dados que coletamos" summary="Só o necessário pra você dar lances e a gente te avisar do que importa.">
         Coletamos dados de cadastro (nome, CPF, contato), dados de verificação de identidade e dados de uso (lotes vistos, lances, favoritos) para operar a plataforma.
       </DocSection>
@@ -395,7 +414,7 @@ function PrivacidadePage({ onBack }) {
         Compartilhamos dados estritamente necessários com o leiloeiro responsável pelo lote arrematado e com parceiros de verificação de identidade e pagamento.
       </DocSection>
       <DocSection n="04" title="Seus direitos (LGPD)" summary="Você pode acessar, corrigir e apagar seus dados quando quiser.">
-        Conforme a LGPD, você pode solicitar acesso, correção, portabilidade ou exclusão dos seus dados a qualquer momento pelo e-mail privacidade@leiloae.com.br.
+        Conforme a LGPD, você poderia solicitar acesso, correção, portabilidade ou exclusão dos seus dados a qualquer momento{CONTACT.privacyEmail ? ` pelo e-mail ${CONTACT.privacyEmail}` : ""}. Nesta demonstração não há dado pessoal armazenado para exercer esses direitos.
       </DocSection>
       <DocSection n="05" title="Cookies" summary="Usamos cookies pra manter você logado e entender o uso.">
         Utilizamos cookies essenciais (para login e segurança) e analíticos (para entender o uso de forma agregada). Você pode gerenciar preferências no seu navegador.
@@ -408,11 +427,14 @@ function PrivacidadePage({ onBack }) {
 // TABELA DE TAXAS
 // =====================================================================
 function TaxasPage({ onBack }) {
+  const EXEMPLO = 150000;
+  const exemplo = simulateCost(EXEMPLO, "imovel");
+  const pct = (taxa) => `${String(taxa * 100).replace(".", ",")}%`;
   const rows = [
-    { item: "Comissão do leiloeiro", val: "5%", base: "sobre o valor do arremate", who: "Leiloeiro oficial" },
-    { item: "ITBI", val: "3%", base: "sobre o valor do arremate (SP)", who: "Prefeitura" },
-    { item: "Registro em cartório", val: "~1,5%", base: "varia por faixa de valor", who: "Cartório de Registro" },
-    { item: "Taxa de serviço Leiloaê", val: "1,5%", base: "sobre o valor do arremate", who: "Leiloaê" },
+    { item: "Comissão do leiloeiro", val: pct(RATES.comissao), base: "sobre o valor do arremate", who: "Leiloeiro oficial" },
+    { item: "ITBI", val: pct(RATES.itbi), base: "sobre o valor do arremate (somente imóveis, SP)", who: "Prefeitura" },
+    { item: "Registro em cartório", val: fmtBRL(RATES.registro), base: "estimativa fixa nesta simulação", who: "Cartório de Registro" },
+    { item: "Taxa de serviço Leiloaê", val: pct(RATES.taxa), base: "sobre o valor do arremate", who: "Leiloaê" },
     { item: "Arrependimento (1º lance)", val: "Grátis", base: "cancelamento em até 24h", who: "—" },
   ];
   return (
@@ -430,21 +452,18 @@ function TaxasPage({ onBack }) {
         ))}
       </div>
 
-      <h2 style={{ fontFamily: "var(--serif)", fontSize: 26, fontWeight: 400, margin: "0 0 16px" }}>Exemplo: arremate de R$ 150.000</h2>
+      <h2 style={{ fontFamily: "var(--serif)", fontSize: 26, fontWeight: 400, margin: "0 0 16px" }}>Exemplo: arremate de {fmtBRL(EXEMPLO)}</h2>
+      {/* Derivado do mesmo simulador do produto: a tabela de taxas não pode
+          divergir do que a pessoa vê na hora do lance (BIZ-008). */}
       <Card style={{ padding: 0, overflow: "hidden" }}>
-        {[
-          ["Valor do arremate", "R$ 150.000"],
-          ["Comissão do leiloeiro (5%)", "R$ 7.500"],
-          ["ITBI (3%)", "R$ 4.500"],
-          ["Registro (~1,5%)", "R$ 2.250"],
-          ["Taxa Leiloaê (1,5%)", "R$ 2.250"],
-        ].map((r, i) => (
-          <div key={r[0]} style={{ display: "flex", justifyContent: "space-between", padding: "13px 22px", borderBottom: "1px solid var(--border)", fontSize: 14.5, color: "var(--text-dim)" }}>
-            <span>{r[0]}</span><span style={{ fontFamily: "var(--mono)" }}>{r[1]}</span>
+        {exemplo.lines.map((l) => (
+          <div key={l.key} style={{ display: "flex", justifyContent: "space-between", padding: "13px 22px", borderBottom: "1px solid var(--border)", fontSize: 14.5, color: "var(--text-dim)" }}>
+            <span>{l.key === "lance" ? "Valor do arremate" : l.label}</span>
+            <span style={{ fontFamily: "var(--mono)" }}>{fmtBRL(l.value)}</span>
           </div>
         ))}
         <div style={{ display: "flex", justifyContent: "space-between", padding: "16px 22px", background: "var(--accent-dim)", fontSize: 16, fontWeight: 600 }}>
-          <span>Custo total estimado</span><span style={{ fontFamily: "var(--mono)", color: "var(--accent-ink)" }}>R$ 166.500</span>
+          <span>Custo total estimado</span><span style={{ fontFamily: "var(--mono)", color: "var(--accent-ink)" }}>{fmtBRL(exemplo.total)}</span>
         </div>
       </Card>
       <p style={{ fontSize: 13, color: "var(--text-mute)", marginTop: 16, lineHeight: 1.6 }}>Valores ilustrativos e fictícios. As taxas reais constam sempre no edital de cada lote e são recalculadas no simulador antes de cada lance.</p>
@@ -519,81 +538,155 @@ function AjudaPage({ onBack, onOpenPage }) {
 // =====================================================================
 // FALE COM A GENTE (contato)
 // =====================================================================
+/**
+ * Fale com a gente.
+ *
+ * O formulário antes coletava nome, e-mail e mensagem, dizia "Recebemos sua
+ * mensagem" e descartava tudo (SEC-002). Agora ele só existe quando há um
+ * destino configurado (VITE_CONTACT_FORM_ENDPOINT); sem destino, a página é
+ * honesta sobre isso e mostra apenas canais que realmente existem.
+ */
 function ContatoPage({ onBack }) {
-  const [form, setForm] = useState({ nome: "", email: "", assunto: "Dúvida sobre um lote", msg: "" });
-  const [sent, setSent] = useState(false);
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-  const submit = (e) => {
-    e.preventDefault();
-    setSent(true);
-    window.dispatchEvent(new CustomEvent("leiloe:toast", { detail: "Mensagem enviada! Respondemos em até 1 dia útil." }));
-  };
-  const field = { background: "var(--surface)", border: "1px solid var(--border-2)", borderRadius: 12, padding: "13px 16px", fontSize: 15, color: "var(--text)", outline: "none", width: "100%" };
+  const canais = [
+    hasWhatsApp() && { icon: <Icon.whatsapp size={18} />, t: "WhatsApp", d: "Atendimento humano", go: () => openExternal(CONTACT.whatsappUrl) },
+    CONTACT.email && { icon: <Icon.bell size={16} />, t: "E-mail", d: CONTACT.email, go: () => openExternal(`mailto:${CONTACT.email}`) },
+    CONTACT.pressEmail && { icon: <Icon.user size={16} />, t: "Imprensa", d: CONTACT.pressEmail, go: () => openExternal(`mailto:${CONTACT.pressEmail}`) },
+  ].filter(Boolean);
 
   return (
-    <PageShell overline="Suporte" title="Fale com a gente." subtitle="Dúvida, sugestão ou problema? Escolha o canal ou mande uma mensagem direto por aqui." onBack={onBack} max={900}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1.3fr", gap: 28, alignItems: "start" }}>
-        {/* channels */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {[
-            { icon: <Icon.whatsapp size={18} />, t: "WhatsApp", d: "Seg a sex, 9h–18h", go: () => { window.open("https://wa.me/5511999999999", "_blank"); } },
-            { icon: <Icon.bell size={16} />, t: "E-mail", d: "oi@leiloae.com.br", go: () => window.dispatchEvent(new CustomEvent("leiloe:toast", { detail: "oi@leiloae.com.br" })) },
-            { icon: <Icon.user size={16} />, t: "Imprensa", d: "imprensa@leiloae.com.br", go: () => window.dispatchEvent(new CustomEvent("leiloe:toast", { detail: "imprensa@leiloae.com.br" })) },
-          ].map(c => (
-            <button key={c.t} onClick={c.go} style={{
-              display: "flex", gap: 14, alignItems: "center", textAlign: "left", cursor: "pointer",
-              background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: "16px 18px", color: "inherit",
-            }}>
-              <span style={{ width: 38, height: 38, borderRadius: 10, display: "grid", placeItems: "center", background: "var(--accent-dim)", color: "var(--accent-ink)", flexShrink: 0 }}>{c.icon}</span>
-              <div>
-                <div style={{ fontSize: 15, fontWeight: 600 }}>{c.t}</div>
-                <div style={{ fontSize: 13, color: "var(--text-mute)" }}>{c.d}</div>
-              </div>
-            </button>
-          ))}
-        </div>
+    <PageShell
+      overline="Suporte"
+      title="Fale com a gente."
+      subtitle={CONTACT_FORM_ENDPOINT ? "Dúvida, sugestão ou problema? Escolha o canal ou mande uma mensagem." : "Dúvida, sugestão ou problema? Veja por onde falar com a gente."}
+      onBack={onBack}
+      max={900}
+    >
+      <div style={{ display: "grid", gridTemplateColumns: canais.length ? "1fr 1.3fr" : "1fr", gap: 28, alignItems: "start" }}>
+        {canais.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {canais.map((c) => (
+              <button key={c.t} type="button" onClick={c.go} style={{
+                display: "flex", gap: 14, alignItems: "center", textAlign: "left", cursor: "pointer",
+                background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: "16px 18px", color: "inherit",
+              }}>
+                <span aria-hidden="true" style={{ width: 38, height: 38, borderRadius: 10, display: "grid", placeItems: "center", background: "var(--accent-dim)", color: "var(--accent-ink)", flexShrink: 0 }}>{c.icon}</span>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 600 }}>{c.t}</div>
+                  <div style={{ fontSize: 13, color: "var(--text-mute)" }}>{c.d}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
 
-        {/* form */}
-        <Card>
-          {sent ? (
-            <div style={{ textAlign: "center", padding: "30px 10px" }}>
-              <div style={{ width: 56, height: 56, borderRadius: "50%", background: "var(--success-dim)", color: "var(--success-ink)", display: "grid", placeItems: "center", margin: "0 auto 18px" }}><Icon.check size={26} /></div>
-              <div style={{ fontFamily: "var(--serif)", fontSize: 26, marginBottom: 8 }}>Recebemos sua mensagem!</div>
-              <div style={{ fontSize: 14.5, color: "var(--text-dim)", marginBottom: 22 }}>A gente responde em até 1 dia útil, em português de gente.</div>
-              <Button variant="ghost" onClick={() => { setSent(false); setForm({ nome: "", email: "", assunto: "Dúvida sobre um lote", msg: "" }); }}>Enviar outra</Button>
-            </div>
-          ) : (
-            <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-                <div>
-                  <label style={{ fontSize: 12.5, color: "var(--text-mute)", display: "block", marginBottom: 6 }}>Nome</label>
-                  <input required value={form.nome} onChange={(e) => set("nome", e.target.value)} placeholder="Seu nome" style={field} />
-                </div>
-                <div>
-                  <label style={{ fontSize: 12.5, color: "var(--text-mute)", display: "block", marginBottom: 6 }}>E-mail</label>
-                  <input required type="email" value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="voce@email.com" style={field} />
-                </div>
-              </div>
-              <div>
-                <label style={{ fontSize: 12.5, color: "var(--text-mute)", display: "block", marginBottom: 6 }}>Assunto</label>
-                <select value={form.assunto} onChange={(e) => set("assunto", e.target.value)} style={field}>
-                  <option>Dúvida sobre um lote</option>
-                  <option>Pagamento e taxas</option>
-                  <option>Conta e verificação</option>
-                  <option>Sou vendedor / leiloeiro</option>
-                  <option>Outro assunto</option>
-                </select>
-              </div>
-              <div>
-                <label style={{ fontSize: 12.5, color: "var(--text-mute)", display: "block", marginBottom: 6 }}>Mensagem</label>
-                <textarea required value={form.msg} onChange={(e) => set("msg", e.target.value)} rows={5} placeholder="Conta pra gente o que houve…" style={{ ...field, resize: "vertical", lineHeight: 1.5 }} />
-              </div>
-              <Button type="submit" variant="primary" full iconRight={<Icon.arrowR />}>Enviar mensagem</Button>
-            </form>
-          )}
-        </Card>
+        {CONTACT_FORM_ENDPOINT ? <ContatoForm /> : <SemCanalConfigurado temCanais={canais.length > 0} />}
       </div>
     </PageShell>
+  );
+}
+
+function SemCanalConfigurado({ temCanais }) {
+  return (
+    <Card>
+      <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+        <span aria-hidden="true" style={{ color: "var(--warning-ink)", marginTop: 2 }}><Icon.info size={18} /></span>
+        <div>
+          <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 6 }}>
+            O formulário está desativado nesta demonstração
+          </div>
+          <p style={{ fontSize: 14.5, lineHeight: 1.65, color: "var(--text-dim)", margin: 0 }}>
+            Preferimos não pedir seu nome e e-mail para depois não ter para onde enviar.
+            {temCanais
+              ? " Use um dos canais ao lado — esses funcionam."
+              : " Assim que houver um canal de atendimento de verdade, ele aparece aqui."}
+          </p>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+/** Formulário real: só é renderizado quando existe endpoint configurado. */
+function ContatoForm() {
+  const [form, setForm] = useState({ nome: "", email: "", assunto: "Dúvida sobre um lote", msg: "" });
+  const [estado, setEstado] = useState("idle"); // idle | enviando | enviado | erro
+  const [erro, setErro] = useState("");
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const ids = { nome: useId(), email: useId(), assunto: useId(), msg: useId() };
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setEstado("enviando");
+    setErro("");
+    try {
+      const resp = await fetch(CONTACT_FORM_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      if (!resp.ok) throw new Error(`Resposta ${resp.status}`);
+      setEstado("enviado");
+    } catch (err) {
+      setEstado("erro");
+      setErro("Não conseguimos enviar agora. Tente de novo em instantes ou use outro canal.");
+      console.error("[Leiloaê] falha ao enviar contato:", err);
+    }
+  };
+
+  const field = { background: "var(--surface)", border: "1px solid var(--border-2)", borderRadius: 12, padding: "13px 16px", fontSize: 15, color: "var(--text)", outline: "none", width: "100%" };
+  const labelStyle = { fontSize: 12.5, color: "var(--text-mute)", display: "block", marginBottom: 6 };
+
+  if (estado === "enviado") {
+    return (
+      <Card>
+        <div style={{ textAlign: "center", padding: "30px 10px" }} role="status">
+          <div aria-hidden="true" style={{ width: 56, height: 56, borderRadius: "50%", background: "var(--success-dim)", color: "var(--success-ink)", display: "grid", placeItems: "center", margin: "0 auto 18px" }}><Icon.check size={26} /></div>
+          <div style={{ fontFamily: "var(--serif)", fontSize: 26, marginBottom: 8 }}>Mensagem enviada.</div>
+          <div style={{ fontSize: 14.5, color: "var(--text-dim)", marginBottom: 22 }}>A gente responde no e-mail que você informou.</div>
+          <Button variant="ghost" onClick={() => { setEstado("idle"); setForm({ nome: "", email: "", assunto: "Dúvida sobre um lote", msg: "" }); }}>Enviar outra</Button>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          <div>
+            <label htmlFor={ids.nome} style={labelStyle}>Nome</label>
+            <input id={ids.nome} required value={form.nome} onChange={(e) => set("nome", e.target.value)} placeholder="Seu nome" style={field} />
+          </div>
+          <div>
+            <label htmlFor={ids.email} style={labelStyle}>E-mail</label>
+            <input id={ids.email} required type="email" value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="voce@email.com" style={field} />
+          </div>
+        </div>
+        <div>
+          <label htmlFor={ids.assunto} style={labelStyle}>Assunto</label>
+          <select id={ids.assunto} value={form.assunto} onChange={(e) => set("assunto", e.target.value)} style={field}>
+            <option>Dúvida sobre um lote</option>
+            <option>Pagamento e taxas</option>
+            <option>Conta e verificação</option>
+            <option>Sou vendedor / leiloeiro</option>
+            <option>Outro assunto</option>
+          </select>
+        </div>
+        <div>
+          <label htmlFor={ids.msg} style={labelStyle}>Mensagem</label>
+          <textarea id={ids.msg} required value={form.msg} onChange={(e) => set("msg", e.target.value)} rows={5} placeholder="Conta pra gente o que houve…" style={{ ...field, resize: "vertical", lineHeight: 1.5 }} />
+        </div>
+        {estado === "erro" && (
+          <div role="alert" style={{ fontSize: 13.5, color: "var(--danger-ink)" }}>{erro}</div>
+        )}
+        <Button type="submit" variant="primary" full disabled={estado === "enviando"} iconRight={<Icon.arrowR />}>
+          {estado === "enviando" ? "Enviando…" : "Enviar mensagem"}
+        </Button>
+        <p style={{ fontSize: 12, color: "var(--text-mute)", margin: 0, lineHeight: 1.5 }}>
+          Usamos seus dados apenas para responder esta mensagem.
+        </p>
+      </form>
+    </Card>
   );
 }
 
