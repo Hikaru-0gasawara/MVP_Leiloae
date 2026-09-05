@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Leiloaê — Leilão sem juridiquês</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Funnel+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg:        #0C0911;
+    --bg-2:      #15101F;
+    --surface:   #1A1426;
+    --surface-2: #221A30;
+    --surface-3: #2B2240;
+    --border:    rgba(255,255,255,0.07);
+    --border-2:  rgba(255,255,255,0.13);
+    --text:      #F4F1E8;
+    --text-dim:  #B5ADC2;
+    --text-mute: #7C7589;
+    --accent:    #B59FF0;   /* warm violet */
+    --accent-2:  #8B6FE8;
+    --accent-dim:#3A2E5C;
+    --accent-ink:#B59FF0;
+    --success:   #7BE0B0;
+    --success-ink:#7BE0B0;
+    --success-dim:#234A39;
+    --warning:   #FFC07A;
+    --warning-ink:#FFC07A;
+    --danger:    #FF8585;
+    --danger-ink:#FF8585;
+    --hot:       #FF6B5B;
+    --hot-ink:   #FF6B5B;
+    --serif: "Instrument Serif", "Times New Roman", serif;
+    --sans:  "Funnel Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+    --mono:  "JetBrains Mono", ui-monospace, monospace;
+    --radius-sm: 8px;
+    --radius:    14px;
+    --radius-lg: 22px;
+    --shadow:    0 1px 0 rgba(255,255,255,0.03) inset, 0 24px 48px -24px rgba(0,0,0,0.6);
+  }
+  :root[data-theme="light"] {
+    --bg:        #F6F3EC;
+    --bg-2:      #EFEAE0;
+    --surface:   #FFFFFF;
+    --surface-2: #F3EFE7;
+    --surface-3: #E9E3D8;
+    --border:    rgba(28,20,40,0.10);
+    --border-2:  rgba(28,20,40,0.17);
+    --text:      #1C1726;
+    --text-dim:  #5C5468;
+    --text-mute: #8E8796;
+    --accent-dim:#E7DEFB;
+    --accent-ink:#5E4AA8;
+    --success-ink:#1B8A5A;
+    --warning-ink:#9A5B0E;
+    --danger-ink:#C5332C;
+    --hot-ink:   #D33F28;
+    --success-dim:#DCF1E7;
+    --shadow:    0 1px 0 rgba(255,255,255,0.6) inset, 0 18px 40px -22px rgba(28,20,40,0.28);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 15px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+  body { min-height: 100vh; }
+  ::selection { background: var(--accent); color: #0C0911; }
+  a { color: inherit; text-decoration: none; }
+  button { font-family: inherit; cursor: pointer; }
+  input, textarea, select { font-family: inherit; }
+  #root { min-height: 100vh; }
+  /* Home hero: stack text above the floating card collage on narrower viewports
+     so the absolutely-positioned cards never overlap the headline/subtitle. */
+  .home-hero-text { max-width: 480px; }
+  @media (max-width: 1080px) {
+    .home-hero { grid-template-columns: 1fr !important; gap: 8px !important; }
+    .home-hero-text { max-width: 640px; }
+    .home-hero-collage { height: 460px !important; margin-top: 8px; }
+  }
+  @media (max-width: 560px) {
+    .home-hero-collage { height: 420px !important; transform: scale(0.82); transform-origin: top left; }
+  }
+  @media (max-width: 1080px) {
+    .home-steps { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  }
+  @media (max-width: 560px) {
+    .home-steps { grid-template-columns: 1fr !important; }
+  }
+  /* Mensagens two-pane → stack on narrow */
+  @media (max-width: 720px) {
+    .msg-grid { grid-template-columns: 1fr !important; }
+    .msg-list { flex-direction: row !important; overflow-x: auto; border-right: none !important; border-bottom: 1px solid var(--border); }
+    .msg-list > button { border-bottom: none !important; min-width: 200px; }
+  }
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 8px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.16); }
+  /* loading splash */
+  .splash { position: fixed; inset: 0; display: grid; place-items: center; background: var(--bg); z-index: 9999; }
+  .splash .mark { font-family: var(--serif); font-size: 56px; font-style: italic; letter-spacing: -1px; color: var(--accent); }
+</style>
+</head>
+<body>
+  <div id="root"><div class="splash"><span class="mark">Leiloaê</span></div></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <script type="text/babel" src="tweaks-panel.jsx"></script>
+  <script type="text/babel" src="src/data.jsx"></script>
+  <script type="text/babel" src="src/components.jsx"></script>
+  <script type="text/babel" src="src/compare.jsx"></script>
+  <script type="text/babel" src="src/account.jsx"></script>
+  <script type="text/babel" src="src/nav.jsx"></script>
+  <script type="text/babel" src="src/bidmodal.jsx"></script>
+  <script type="text/babel" src="src/screens.jsx"></script>
+  <script type="text/babel" src="src/saved.jsx"></script>
+  <script type="text/babel" src="src/pages.jsx"></script>
+  <script type="text/babel" src="src/accountpages.jsx"></script>
+  <script type="text/babel" src="src/lotdetail.jsx"></script>
+  <script type="text/babel" src="src/app.jsx"></script>
+</body>
+</html>
