@@ -1,9 +1,11 @@
 // SAVED / Favoritados — lots the user has hearted.
+import { useMemo } from "react";
+import { LOTS, fmtBRL } from "./data.js";
+import { SectionHead, Button, Icon, LotCard } from "./components.jsx";
+import { StatCard } from "./screens.jsx";
 
-const { useMemo: useMemoSv } = React;
-
-function SavedScreen({ onOpenLot, onBid, onSave, onNavigate, onCategoryChange, density = "regular", lots = window.LOTS }) {
-  const saved = useMemoSv(() => lots.filter(l => l.saved), [lots]);
+export function SavedScreen({ onOpenLot, onBid, onSave, onNavigate, onCategoryChange, density = "regular", lots = LOTS }) {
+  const saved = useMemo(() => lots.filter(l => l.saved), [lots]);
   const imoveis = saved.filter(l => l.category === "imovel");
   const veiculos = saved.filter(l => l.category === "carro");
 
@@ -93,5 +95,3 @@ function SavedEmpty({ onNavigate, onCategoryChange }) {
     </div>
   );
 }
-
-Object.assign(window, { SavedScreen });

@@ -1,14 +1,16 @@
-// All screens: Home, Tour, Listing, LotDetail, Win confirmation.
-
-const { useState: useStateS, useEffect: useEffectS, useMemo: useMemoS, useRef: useRefS } = React;
+// Screens: Home, Tour, Listing, My Bids.
+import { useState, useEffect, useMemo } from "react";
+import { GLOSSARY, LOTS, fmtBRL, fmtNum, simulateCost } from "./data.js";
+import { Badge, Button, Icon, SectionHead, GlossaryTerm, Countdown, LotCard, LotPhoto } from "./components.jsx";
+import { Wordmark } from "./nav.jsx";
+import { useCompare } from "./state/compareStore.js";
 
 // ============================================================
 // HOME — logged-out landing
 // ============================================================
-function HomeScreen({ onNavigate, onTour, onOpenLot, onCategoryChange, onBid, onSave, onOpenPage, lots = window.LOTS }) {
+export function HomeScreen({ onNavigate, onTour, onOpenLot, onCategoryChange, onBid, onSave, onOpenPage, lots = LOTS }) {
   const allLots = lots;
   const featured = allLots.filter(l => l.category === "imovel").slice(0, 3);
-  const cars = allLots.filter(l => l.category === "carro").slice(0, 3);
   const endingSoon = [...allLots].sort((a, b) => a.endsAt - b.endsAt).slice(0, 3);
 
   return (
@@ -180,7 +182,7 @@ function HomeFaq({ onOpenPage }) {
     { q: "Posso parcelar?", a: "Depende do edital de cada lote. Quando há parcelamento, as condições aparecem na aba Regras e taxas do lote — sem letra miúda." },
     { q: "E se eu me arrepender?", a: "Na sua primeira arrematação você tem 24 horas pra cancelar, sem multa. Nos lances seguintes valem as regras do edital, que a gente resume em português." },
   ];
-  const [open, setOpen] = useStateS(0);
+  const [open, setOpen] = useState(0);
   return (
     <div style={{ maxWidth: 820, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", overflow: "hidden" }}>
       {items.map((it, i) => (
@@ -322,7 +324,7 @@ function HeroCollage({ lots, onOpenLot }) {
 }
 
 function MiniSimulator({ initial }) {
-  const [v, setV] = useStateS(initial);
+  const [v, setV] = useState(initial);
   const b = simulateCost(v);
   return (
     <div>
@@ -354,9 +356,9 @@ function Row({ label, value, accent }) {
 // ============================================================
 // TOUR — 5-step modal overlay
 // ============================================================
-function TourOverlay({ open, onClose }) {
-  const [i, setI] = useStateS(0);
-  useEffectS(() => { if (open) setI(0); }, [open]);
+export function TourOverlay({ open, onClose }) {
+  const [i, setI] = useState(0);
+  useEffect(() => { if (open) setI(0); }, [open]);
   if (!open) return null;
 
   const slides = [
@@ -554,9 +556,9 @@ function ArtSpark() {
 // ============================================================
 // LISTING — unified browse with Tudo/Imóveis/Veículos pills
 // ============================================================
-function ListingScreen({ onOpenLot, density = "regular", category = "todos", onCategoryChange, onBid, onSave, onOpenCompare, lots = window.LOTS }) {
+export function ListingScreen({ onOpenLot, density = "regular", category = "todos", onCategoryChange, onBid, onSave, onOpenCompare, lots = LOTS }) {
   const compare = useCompare();
-  const [filters, setFilters] = useStateS({
+  const [filters, setFilters] = useState({
     search: "",
     types: [],
     regions: [],
@@ -568,11 +570,11 @@ function ListingScreen({ onOpenLot, density = "regular", category = "todos", onC
   });
 
   // Reset relevant filters when switching category
-  useEffectS(() => {
+  useEffect(() => {
     setFilters(f => ({ ...f, types: [], regions: [], occupancy: "all", auctionType: "all", condition: "all" }));
   }, [category]);
 
-  const filtered = useMemoS(() => {
+  const filtered = useMemo(() => {
     let lotsArr = [...lots];
     if (category === "imovel") lotsArr = lotsArr.filter(l => l.category === "imovel");
     else if (category === "carro") lotsArr = lotsArr.filter(l => l.category === "carro");
@@ -873,9 +875,7 @@ function FilterRadio({ checked, onChange, children }) {
   );
 }
 
-Object.assign(window, { HomeScreen, TourOverlay, ListingScreen, MyBidsScreen, CategoryCard, StatCard });
-
-function CategoryCard({ label, count, sub, gradient, emoji, onClick, badge }) {
+export function CategoryCard({ label, count, sub, gradient, emoji, onClick, badge }) {
   return (
     <button onClick={onClick} style={{
       background: "var(--surface)",
@@ -913,17 +913,17 @@ function CategoryCard({ label, count, sub, gradient, emoji, onClick, badge }) {
 // ============================================================
 // MY BIDS — list of active bids
 // ============================================================
-function MyBidsScreen({ onOpenLot }) {
+export function MyBidsScreen({ onOpenLot, lots = LOTS }) {
   // Simulated user bids
   const myBidIds = ["lot-mooca-studio", "lot-tatuape-studio", "car-corolla"];
-  const myBids = window.LOTS.filter(l => myBidIds.includes(l.id)).map((lot, i) => ({
+  const myBids = lots.filter(l => myBidIds.includes(l.id)).map((lot, i) => ({
     ...lot,
     myBid: i === 0 ? lot.currentBid + 200 : i === 1 ? lot.currentBid - 1500 : lot.currentBid,
     status: i === 0 ? "winning" : i === 1 ? "outbid" : "winning",
     placedAt: ["há 2h", "há 14h", "há 1d"][i],
   }));
 
-  const won = window.LOTS.filter(l => l.id === "lot-liberdade-kitnet").map(lot => ({ ...lot, myBid: 98500, wonAt: "há 3 dias" }));
+  const won = lots.filter(l => l.id === "lot-liberdade-kitnet").map(lot => ({ ...lot, myBid: 98500, wonAt: "há 3 dias" }));
 
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "40px 40px 80px", animation: "leiloe-fadein 0.3s ease" }}>
@@ -961,7 +961,7 @@ function MyBidsScreen({ onOpenLot }) {
   );
 }
 
-function StatCard({ label, value, tone, small }) {
+export function StatCard({ label, value, tone, small }) {
   const tones = {
     accent:  { bg: "var(--accent-dim)", color: "var(--accent-ink)" },
     success: { bg: "var(--success-dim)", color: "var(--success-ink)" },

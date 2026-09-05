@@ -1,46 +1,17 @@
-// Comparar leilões — global store + floating bar + side-by-side modal.
-// Lets the user pick up to 4 lots (imóveis or veículos) and compare them.
-
-const { useState: useStateCmp, useEffect: useEffectCmp } = React;
-
-// ---------- Tiny global store (no prop threading needed) ----------
-const compareStore = {
-  ids: [],
-  listeners: new Set(),
-  MAX: 4,
-  has(id) { return this.ids.includes(id); },
-  toggle(id) {
-    if (this.has(id)) {
-      this.ids = this.ids.filter(x => x !== id);
-    } else {
-      if (this.ids.length >= this.MAX) {
-        window.dispatchEvent(new CustomEvent("leiloe:toast", { detail: `Dá pra comparar até ${this.MAX} leilões por vez` }));
-        return;
-      }
-      this.ids = [...this.ids, id];
-    }
-    this.emit();
-  },
-  remove(id) { this.ids = this.ids.filter(x => x !== id); this.emit(); },
-  clear() { this.ids = []; this.emit(); },
-  emit() { this.listeners.forEach(fn => fn()); },
-  subscribe(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); },
-};
-
-function useCompare() {
-  const [, setN] = useStateCmp(0);
-  useEffectCmp(() => compareStore.subscribe(() => setN(n => n + 1)), []);
-  return compareStore;
-}
+// Comparar leilões — floating bar + side-by-side modal.
+import { useEffect } from "react";
+import { VENDORS, fmtBRL, fmtNum, simulateCost } from "./data.js";
+import { Icon, LotPhoto, Countdown } from "./components.jsx";
+import { compareStore, useCompare } from "./state/compareStore.js";
 
 const cmpGlyphs = { studio: "▢", apto: "◫", casa: "⌂", sedan: "🚗", hatch: "🚗", suv: "🚙" };
 
 // ---------- Floating compare bar ----------
-function CompareBar({ onOpen, hidden }) {
+export function CompareBar({ onOpen, hidden, lots }) {
   const compare = useCompare();
   if (hidden || compare.ids.length === 0) return null;
-  const lots = compare.ids.map(id => window.LOTS.find(l => l.id === id)).filter(Boolean);
-  const enough = lots.length >= 2;
+  const selected = compare.ids.map(id => lots.find(l => l.id === id)).filter(Boolean);
+  const enough = selected.length >= 2;
   return (
     <div style={{
       position: "fixed", left: "50%", bottom: 22, transform: "translateX(-50%)",
@@ -53,11 +24,11 @@ function CompareBar({ onOpen, hidden }) {
     }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 1, flexShrink: 0 }}>
         <span style={{ fontSize: 12.5, fontWeight: 500, color: "var(--text)" }}>Comparar leilões</span>
-        <span style={{ fontSize: 11.5, color: "var(--text-mute)" }}>{lots.length} de {compare.MAX} selecionados</span>
+        <span style={{ fontSize: 11.5, color: "var(--text-mute)" }}>{selected.length} de {compare.MAX} selecionados</span>
       </div>
 
       <div style={{ display: "flex", gap: 8, flex: 1, minWidth: 0, overflowX: "auto", scrollbarWidth: "none" }}>
-        {lots.map(lot => (
+        {selected.map(lot => (
           <div key={lot.id} style={{
             position: "relative", flexShrink: 0,
             display: "flex", alignItems: "center", gap: 8,
@@ -90,7 +61,7 @@ function CompareBar({ onOpen, hidden }) {
           fontSize: 13.5, fontWeight: 600, cursor: enough ? "pointer" : "not-allowed",
           display: "inline-flex", alignItems: "center", gap: 8, whiteSpace: "nowrap",
         }}>
-          <Icon.compare size={14} /> Comparar{enough ? ` (${lots.length})` : ""}
+          <Icon.compare size={14} /> Comparar{enough ? ` (${selected.length})` : ""}
         </button>
       </div>
     </div>
@@ -98,9 +69,9 @@ function CompareBar({ onOpen, hidden }) {
 }
 
 // ---------- Side-by-side comparison modal ----------
-function CompareModal({ open, onClose, onBid }) {
+export function CompareModal({ open, onClose, onBid, lots }) {
   const compare = useCompare();
-  useEffectCmp(() => {
+  useEffect(() => {
     if (!open) return;
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", onKey);
@@ -108,10 +79,10 @@ function CompareModal({ open, onClose, onBid }) {
   }, [open, onClose]);
   if (!open) return null;
 
-  const lots = compare.ids.map(id => window.LOTS.find(l => l.id === id)).filter(Boolean);
-  if (lots.length === 0) return null;
+  const selected = compare.ids.map(id => lots.find(l => l.id === id)).filter(Boolean);
+  if (selected.length === 0) return null;
 
-  const data = lots.map(l => {
+  const data = selected.map(l => {
     const ref = l.category === "carro" ? l.fipe : l.appraised;
     const discount = Math.round((1 - l.currentBid / ref) * 100);
     const bd = simulateCost(l.currentBid);
@@ -122,10 +93,10 @@ function CompareModal({ open, onClose, onBid }) {
   const maxDisc = Math.max(...data.map(d => d.discount));
   const minTotal = Math.min(...data.map(d => d.total));
   const soonest = Math.min(...data.map(d => d.lot.endsAt));
-  const anyImovel = lots.some(l => l.category !== "carro");
-  const anyCarro = lots.some(l => l.category === "carro");
+  const anyImovel = selected.some(l => l.category !== "carro");
+  const anyCarro = selected.some(l => l.category === "carro");
 
-  const cols = `168px repeat(${lots.length}, minmax(196px, 1fr))`;
+  const cols = `168px repeat(${selected.length}, minmax(196px, 1fr))`;
 
   const labelCell = {
     padding: "16px 18px", fontSize: 12.5, color: "var(--text-mute)",
@@ -214,7 +185,7 @@ function CompareModal({ open, onClose, onBid }) {
   }
 
   addRow("Vendedor", (d) => {
-    const v = (window.VENDORS && window.VENDORS[d.lot.vendor]) || { name: "—", rating: 0 };
+    const v = VENDORS[d.lot.vendor] || { name: "—", rating: 0 };
     return (
       <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
         <span style={{ fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.name}</span>
@@ -254,7 +225,7 @@ function CompareModal({ open, onClose, onBid }) {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 24px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
           <div>
             <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--accent-ink)", marginBottom: 5 }}>Lado a lado</div>
-            <div style={{ fontFamily: "var(--serif)", fontSize: 26, letterSpacing: "-0.01em", lineHeight: 1 }}>Comparando {lots.length} leilões</div>
+            <div style={{ fontFamily: "var(--serif)", fontSize: 26, letterSpacing: "-0.01em", lineHeight: 1 }}>Comparando {selected.length} leilões</div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={() => compareStore.clear()} style={{ background: "transparent", border: "1px solid var(--border-2)", color: "var(--text-dim)", borderRadius: 999, padding: "8px 14px", fontSize: 13, cursor: "pointer" }}>Limpar tudo</button>
@@ -270,5 +241,3 @@ function CompareModal({ open, onClose, onBid }) {
     </div>
   );
 }
-
-Object.assign(window, { compareStore, useCompare, CompareBar, CompareModal });

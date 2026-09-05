@@ -1,9 +1,10 @@
-// Three navigation/IA variations for Leiloê.
-
-const { useState: useStateNav, useRef: useRefNav, useEffect: useEffectNav, useMemo: useMemoNav } = React;
+// Top navigation — "Top + ticker ao vivo" (the production nav variation).
+import { useState, useRef, useEffect, useMemo } from "react";
+import { fmtBRL } from "./data.js";
+import { Icon, Badge, Countdown } from "./components.jsx";
 
 // ---------- Shared: Logo wordmark ----------
-function Wordmark({ size = 24, sub }) {
+export function Wordmark({ size = 24, sub }) {
   return (
     <div style={{ display: "inline-flex", alignItems: "baseline", gap: 8 }}>
       <span style={{
@@ -19,7 +20,7 @@ function Wordmark({ size = 24, sub }) {
 }
 
 // ---------- Light/Dark toggle ----------
-function ThemeToggle({ theme = "dark", onToggle, style }) {
+export function ThemeToggle({ theme = "dark", onToggle, style }) {
   const isLight = theme === "light";
   return (
     <button onClick={onToggle} aria-label={isLight ? "Ativar modo escuro" : "Ativar modo claro"} title={isLight ? "Modo escuro" : "Modo claro"} style={{
@@ -33,42 +34,11 @@ function ThemeToggle({ theme = "dark", onToggle, style }) {
   );
 }
 
-// ---------- Top-level search input ----------
-function NavSearch({ placeholder = "Buscar por bairro, modelo, lote…", style, onSubmit }) {
-  const [v, setV] = useStateNav("");
-  return (
-    <form onSubmit={(e) => { e.preventDefault(); onSubmit && onSubmit(v); }} style={{
-      display: "flex", alignItems: "center", gap: 10,
-      background: "var(--surface)",
-      border: "1px solid var(--border)",
-      borderRadius: 999,
-      padding: "10px 16px",
-      color: "var(--text-mute)",
-      transition: "border-color 0.15s ease",
-      ...style,
-    }}
-    onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--border-2)"; }}
-    onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; }}
-    >
-      <Icon.search size={15} />
-      <input
-        value={v} onChange={(e) => setV(e.target.value)}
-        placeholder={placeholder}
-        style={{
-          background: "transparent", border: "none", outline: "none",
-          color: "var(--text)", fontSize: 14, flex: 1, minWidth: 0,
-        }}
-      />
-      <span style={{ fontSize: 11, color: "var(--text-mute)", border: "1px solid var(--border-2)", padding: "2px 6px", borderRadius: 6, fontFamily: "var(--mono)" }}>⌘ K</span>
-    </form>
-  );
-}
-
 // ---------- Account chip (with profile popover) ----------
-function AccountChip({ compact, name = "Camila", fullName = "Camila Silva", email = "camila@email.com", onTour, onNavigate, onOpenPage, onMyData, onNotifications, onSignOut, onSignIn, notify, loggedIn = true, notifCount = 2 }) {
-  const [open, setOpen] = useStateNav(false);
-  const ref = useRefNav(null);
-  useEffectNav(() => {
+export function AccountChip({ compact, name = "Camila", fullName = "Camila Silva", email = "camila@email.com", onTour, onNavigate, onOpenPage, onMyData, onNotifications, onSignOut, onSignIn, notify, loggedIn = true, notifCount = 2 }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
     if (!open) return;
     const onClick = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
     const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
@@ -240,9 +210,9 @@ const NOTIFICATIONS = [
   },
 ];
 
-function NotificationsPanel({ open, onClose }) {
-  const ref = useRefNav(null);
-  useEffectNav(() => {
+export function NotificationsPanel({ open, onClose }) {
+  const ref = useRef(null);
+  useEffect(() => {
     if (!open) return;
     const onClick = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
@@ -322,141 +292,18 @@ function NotificationsPanel({ open, onClose }) {
 }
 
 // =====================================================================
-// VARIATION A — Sidebar persistente
+// Top minimalista + Live ticker
 // =====================================================================
-function NavA({ route, category, onNavigate, onCategoryChange, onTour }) {
-  const items = [
-    { id: "home",       label: "Início",        icon: <Icon.spark /> },
-    { id: "imoveis",    label: "Imóveis",       icon: <Icon.compass />, badge: window.LOTS.filter(l => l.category === "imovel").length },
-    { id: "veiculos",   label: "Veículos",      icon: <Icon.gavel />, badge: window.LOTS.filter(l => l.category === "carro").length },
-    { id: "saved",      label: "Salvos",        icon: <Icon.heart />, badge: window.LOTS.filter(l => l.saved).length },
-    { id: "my-bids",    label: "Meus lances",   icon: <Icon.list /> },
-    { id: "learn",      label: "Como funciona", icon: <Icon.book /> },
-  ];
-  const isActive = (id) => {
-    if (id === "home") return route === "home";
-    if (id === "imoveis") return (route === "listing" || route === "lot") && category === "imovel";
-    if (id === "veiculos") return (route === "listing" || route === "lot") && category === "carro";
-    return route === id;
-  };
-  return (
-    <aside style={{
-      position: "sticky", top: 0, alignSelf: "flex-start",
-      width: 248, height: "100vh",
-      borderRight: "1px solid var(--border)",
-      background: "var(--bg)",
-      display: "flex", flexDirection: "column",
-      padding: "22px 16px 18px",
-      flexShrink: 0,
-    }}>
-      <div style={{ padding: "0 8px 18px", borderBottom: "1px solid var(--border)" }}>
-        <Wordmark size={26} sub="beta" />
-      </div>
-
-      <nav style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 14, flex: 1 }}>
-        {items.map(it => {
-          const active = isActive(it.id);
-          return (
-            <button key={it.id} onClick={() => {
-              if (it.id === "imoveis") { onCategoryChange("imovel"); onNavigate("listing"); }
-              else if (it.id === "veiculos") { onCategoryChange("carro"); onNavigate("listing"); }
-              else if (it.id === "learn") { onTour(); }
-              else if (it.id === "saved") { onNavigate("saved"); }
-              else if (it.id === "my-bids") { onNavigate("my-bids"); }
-              else { onNavigate(it.id); }
-            }}
-              style={{
-                display: "flex", alignItems: "center", gap: 12,
-                padding: "10px 12px", borderRadius: 10,
-                background: active ? "var(--surface-2)" : "transparent",
-                color: active ? "var(--text)" : "var(--text-dim)",
-                border: "none", textAlign: "left",
-                fontSize: 14, fontWeight: active ? 500 : 400,
-                position: "relative", cursor: "pointer",
-              }}>
-              <span style={{ color: active ? "var(--accent-ink)" : "var(--text-mute)", display: "flex" }}>{it.icon}</span>
-              <span style={{ flex: 1 }}>{it.label}</span>
-              {it.badge != null && (
-                <span style={{
-                  fontSize: 11, fontFamily: "var(--mono)",
-                  background: active ? "var(--accent-dim)" : "var(--surface-2)",
-                  color: active ? "var(--accent-ink)" : "var(--text-mute)",
-                  padding: "1px 7px", borderRadius: 999,
-                }}>{it.badge}</span>
-              )}
-            </button>
-          );
-        })}
-      </nav>
-
-      <div style={{
-        marginTop: 16, padding: "14px",
-        background: "linear-gradient(135deg, var(--accent-dim) 0%, transparent 100%)",
-        border: "1px solid rgba(181,159,240,0.18)",
-        borderRadius: 14,
-      }}>
-        <div style={{ fontFamily: "var(--serif)", fontSize: 17, lineHeight: 1.2, marginBottom: 6 }}>
-          Primeiro lance?
-        </div>
-        <div style={{ fontSize: 12.5, color: "var(--text-dim)", marginBottom: 10, lineHeight: 1.4 }}>
-          Janela de 24h pra cancelar. Sem multa.
-        </div>
-        <button onClick={onTour} style={{
-          background: "var(--accent)", color: "#15101F", border: "none",
-          padding: "8px 12px", borderRadius: 999, fontSize: 12.5, fontWeight: 500,
-          cursor: "pointer", width: "100%",
-        }}>Fazer tour ›</button>
-      </div>
-    </aside>
-  );
-}
-
-function NavATopbar({ onTour, onOpenNotifications, notificationsOpen, account, theme, onToggleTheme }) {
-  return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 16,
-      padding: "16px 32px",
-      borderBottom: "1px solid var(--border)",
-      background: "var(--bg)",
-      position: "sticky", top: 0, zIndex: 20,
-    }}>
-      <div style={{ flex: 1 }} />
-      <ThemeToggle theme={theme} onToggle={onToggleTheme} />
-      <button onClick={onTour} style={{
-        background: "transparent", color: "var(--text-dim)", border: "1px solid var(--border-2)",
-        borderRadius: 999, padding: "8px 14px", fontSize: 13, cursor: "pointer",
-        display: "inline-flex", alignItems: "center", gap: 6,
-      }}>
-        <Icon.book size={14} /> Como funciona
-      </button>
-      <button onClick={onOpenNotifications} style={{
-        position: "relative",
-        background: notificationsOpen ? "var(--surface-2)" : "transparent",
-        color: "var(--text-dim)", border: "1px solid var(--border-2)",
-        borderRadius: 999, padding: "9px 11px",
-        cursor: "pointer",
-      }}>
-        <Icon.bell size={14} />
-        <span style={{ position: "absolute", top: 4, right: 6, width: 6, height: 6, borderRadius: "50%", background: "var(--accent)" }} />
-      </button>
-      <AccountChip onTour={onTour} {...account} />
-    </div>
-  );
-}
-
-// =====================================================================
-// VARIATION B — Top minimalista + Live ticker (DEFAULT)
-// =====================================================================
-function NavB({ route, category, onNavigate, onCategoryChange, onTour, onOpenNotifications, notificationsOpen, account, theme, onToggleTheme }) {
+export function NavB({ route, category, onNavigate, onCategoryChange, onTour, onOpenNotifications, notificationsOpen, account, theme, onToggleTheme, lots }) {
   const items = [
     { id: "auctions", label: "Leilões" },
     { id: "bids",     label: "Meus lances" },
     { id: "saved",    label: "Salvos" },
   ];
 
-  const ticker = useMemoNav(() => {
-    return [...window.LOTS].sort((a, b) => a.endsAt - b.endsAt);
-  }, [window.LOTS]);
+  const ticker = useMemo(() => {
+    return [...lots].sort((a, b) => a.endsAt - b.endsAt);
+  }, [lots]);
 
   const activeId = (route === "listing" || route === "lot") ? "auctions"
                  : route === "my-bids" ? "bids"
@@ -548,15 +395,7 @@ function NavB({ route, category, onNavigate, onCategoryChange, onTour, onOpenNot
 // Continuous marquee — duplicates the items so the loop is seamless.
 // Pauses on hover; respects prefers-reduced-motion.
 function MarqueeTrack({ items, onClick }) {
-  const [paused, setPaused] = useStateNav(false);
-  const [reducedMotion, setReducedMotion] = useStateNav(false);
-  useEffectNav(() => {
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setReducedMotion(mq.matches);
-    const handler = (e) => setReducedMotion(e.matches);
-    mq.addEventListener && mq.addEventListener("change", handler);
-    return () => mq.removeEventListener && mq.removeEventListener("change", handler);
-  }, []);
+  const [paused, setPaused] = useState(false);
   const duplicated = [...items, ...items];
   const speed = Math.max(48, items.length * 7); // ~7s per item
   return (
@@ -590,108 +429,3 @@ function MarqueeTrack({ items, onClick }) {
     </div>
   );
 }
-
-// =====================================================================
-// VARIATION C — Hub contextual
-// =====================================================================
-function NavC({ route, category, onNavigate, onCategoryChange, onTour, mode, setMode, onOpenNotifications, notificationsOpen, account, theme, onToggleTheme }) {
-  const modes = [
-    { id: "aprender",   label: "Aprender",   sub: "Tour, glossário, simuladores" },
-    { id: "explorar",   label: "Explorar",   sub: "Catálogo, filtros, salvos" },
-    { id: "acompanhar", label: "Acompanhar", sub: "Lances, alertas, arremates" },
-  ];
-
-  const subnavExplore = [
-    { id: "imovel", label: "Imóveis", action: () => { onCategoryChange("imovel"); onNavigate("listing"); } },
-    { id: "carro",  label: "Veículos", action: () => { onCategoryChange("carro");  onNavigate("listing"); } },
-    { id: "ending", label: "Encerrando hoje", action: () => { onNavigate("listing"); } },
-    { id: "saved",  label: "Salvos", action: () => { onNavigate("saved"); } },
-  ];
-  const subnavLearn = [
-    { id: "tour",     label: "Tour de iniciante",  action: onTour },
-    { id: "gloss",    label: "Glossário",          action: () => {} },
-    { id: "sim",      label: "Simulador de custo", action: () => {} },
-    { id: "faq",      label: "Perguntas frequentes", action: () => {} },
-  ];
-  const subnavFollow = [
-    { id: "active",   label: "Meus lances ativos", action: () => onNavigate("my-bids") },
-    { id: "alerts",   label: "Alertas configurados", action: () => {} },
-    { id: "wins",     label: "Arremates", action: () => {} },
-    { id: "history",  label: "Histórico", action: () => {} },
-  ];
-  const subnav = mode === "aprender" ? subnavLearn : mode === "acompanhar" ? subnavFollow : subnavExplore;
-
-  return (
-    <header style={{ position: "sticky", top: 0, zIndex: 30, background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
-      <div style={{
-        display: "flex", alignItems: "center", gap: 16,
-        padding: "16px 28px",
-        maxWidth: 1440, margin: "0 auto",
-      }}>
-        <button onClick={() => onNavigate("home")} style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer" }}>
-          <Wordmark size={26} />
-        </button>
-        <div style={{ flex: 1 }} />
-        <ThemeToggle theme={theme} onToggle={onToggleTheme} />
-        <button onClick={onOpenNotifications} style={{
-          position: "relative",
-          background: notificationsOpen ? "var(--surface-2)" : "transparent",
-          color: "var(--text-dim)", border: "1px solid var(--border-2)",
-          borderRadius: 999, padding: "9px 11px", flexShrink: 0, cursor: "pointer",
-        }}>
-          <Icon.bell size={14} />
-          <span style={{ position: "absolute", top: 4, right: 6, width: 6, height: 6, borderRadius: "50%", background: "var(--accent)" }} />
-        </button>
-        <AccountChip onTour={onTour} compact {...account} />
-      </div>
-
-      <div style={{ borderTop: "1px solid var(--border)", background: "var(--bg)" }}>
-        <div style={{ display: "flex", maxWidth: 1440, margin: "0 auto", padding: "0 28px" }}>
-          {modes.map(m => {
-            const active = mode === m.id;
-            return (
-              <button key={m.id}
-                onClick={() => {
-                  setMode(m.id);
-                  if (m.id === "aprender") onTour();
-                  else if (m.id === "explorar") onNavigate("listing");
-                  else if (m.id === "acompanhar") onNavigate("my-bids");
-                }}
-                style={{
-                  background: "transparent", border: "none",
-                  padding: "14px 22px",
-                  textAlign: "left",
-                  color: active ? "var(--text)" : "var(--text-dim)",
-                  borderBottom: active ? "2px solid var(--accent)" : "2px solid transparent",
-                  marginBottom: -1,
-                  cursor: "pointer",
-                  display: "flex", flexDirection: "column", gap: 2,
-                }}>
-                <span style={{ fontSize: 14.5, fontWeight: active ? 500 : 400 }}>{m.label}</span>
-                <span style={{ fontSize: 11.5, color: "var(--text-mute)" }}>{m.sub}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div style={{ borderTop: "1px solid var(--border)", background: "var(--bg-2)" }}>
-        <div style={{ display: "flex", gap: 4, maxWidth: 1440, margin: "0 auto", padding: "10px 28px", overflowX: "auto", scrollbarWidth: "none" }}>
-          {subnav.map((item, i) => {
-            const active = mode === "explorar" && (item.id === category || (item.id === "imovel" && category === "imovel") || (item.id === "carro" && category === "carro"));
-            return (
-              <button key={item.id} onClick={item.action} style={{
-                background: active ? "var(--surface-2)" : "transparent",
-                color: active ? "var(--text)" : "var(--text-dim)",
-                border: "1px solid", borderColor: active ? "var(--border-2)" : "transparent",
-                borderRadius: 999, padding: "6px 14px", fontSize: 13, whiteSpace: "nowrap", cursor: "pointer",
-              }}>{item.label}</button>
-            );
-          })}
-        </div>
-      </div>
-    </header>
-  );
-}
-
-Object.assign(window, { NavA, NavATopbar, NavB, NavC, Wordmark, NavSearch, AccountChip, NotificationsPanel });

@@ -1,12 +1,14 @@
 // Global footer ("batente") + all the pages it links to.
 // Brand voice: plain Portuguese, anti-juridiquês, warm. All content fictional.
-
-const { useState: useStateP, useMemo: useMemoP } = React;
+import { useState, useMemo } from "react";
+import { GLOSSARY } from "./data.js";
+import { Icon, Button } from "./components.jsx";
+import { Wordmark } from "./nav.jsx";
 
 // =====================================================================
 // FOOTER
 // =====================================================================
-function Footer({ onOpenPage, onTour, onNavigate }) {
+export function Footer({ onOpenPage, onTour, onNavigate }) {
   const cols = [
     {
       head: "Sobre o Leiloaê",
@@ -260,8 +262,8 @@ function Imprensa({ onBack }) {
 // GLOSSÁRIO
 // =====================================================================
 function GlossarioPage({ onBack }) {
-  const [q, setQ] = useStateP("");
-  const terms = useMemoP(() => {
+  const [q, setQ] = useState("");
+  const terms = useMemo(() => {
     const all = Object.keys(GLOSSARY).sort((a, b) => a.localeCompare(b, "pt"));
     if (!q.trim()) return all;
     const n = q.trim().toLowerCase();
@@ -413,7 +415,6 @@ function TaxasPage({ onBack }) {
     { item: "Taxa de serviço Leiloaê", val: "1,5%", base: "sobre o valor do arremate", who: "Leiloaê" },
     { item: "Arrependimento (1º lance)", val: "Grátis", base: "cancelamento em até 24h", who: "—" },
   ];
-  const ex = window.simulateCost ? window.simulateCost(150000) : null;
   return (
     <PageShell overline="Termos e taxas" title="Tabela de taxas." subtitle="Tudo que entra na conta de um arremate — sem letra miúda. Percentuais ilustrativos para o estado de São Paulo." onBack={onBack} max={820}>
       <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", overflow: "hidden", marginBottom: 32 }}>
@@ -478,7 +479,7 @@ function AjudaPage({ onBack, onOpenPage }) {
       ],
     },
   ];
-  const [open, setOpen] = useStateP("0-0");
+  const [open, setOpen] = useState("0-0");
   return (
     <PageShell overline="Suporte" title="Central de ajuda." subtitle="As dúvidas mais comuns, respondidas sem enrolação. Não achou? Fale com a gente." onBack={onBack} max={780}>
       {groups.map((g, gi) => (
@@ -519,8 +520,8 @@ function AjudaPage({ onBack, onOpenPage }) {
 // FALE COM A GENTE (contato)
 // =====================================================================
 function ContatoPage({ onBack }) {
-  const [form, setForm] = useStateP({ nome: "", email: "", assunto: "Dúvida sobre um lote", msg: "" });
-  const [sent, setSent] = useStateP(false);
+  const [form, setForm] = useState({ nome: "", email: "", assunto: "Dúvida sobre um lote", msg: "" });
+  const [sent, setSent] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const submit = (e) => {
     e.preventDefault();
@@ -599,7 +600,7 @@ function ContatoPage({ onBack }) {
 // =====================================================================
 // ROUTER
 // =====================================================================
-function PageScreen({ pageId, onNavigate, onOpenPage, onTour }) {
+export function PageScreen({ pageId, onNavigate, onOpenPage, onTour }) {
   const onBack = () => onNavigate("home");
   switch (pageId) {
     case "quem-somos":   return <QuemSomos onBack={onBack} onTour={onTour} />;
@@ -615,5 +616,3 @@ function PageScreen({ pageId, onNavigate, onOpenPage, onTour }) {
     default:             return <QuemSomos onBack={onBack} onTour={onTour} />;
   }
 }
-
-Object.assign(window, { Footer, PageScreen });

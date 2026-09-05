@@ -1,9 +1,10 @@
 // Account area: Meus dados (perfil), Toast.
-
-const { useState: useStateAcc, useEffect: useEffectAcc } = React;
+import { useState } from "react";
+import { LOTS } from "./data.js";
+import { SectionHead, Button, Badge, Icon } from "./components.jsx";
 
 // ---------- Ephemeral toast (controlled by App, dispatched via "leiloe:toast") ----------
-function Toast({ message }) {
+export function Toast({ message }) {
   if (!message) return null;
   return (
     <div style={{
@@ -20,15 +21,15 @@ function Toast({ message }) {
   );
 }
 
-const notify = (msg) => window.dispatchEvent(new CustomEvent("leiloe:toast", { detail: msg }));
+export const notify = (msg) => window.dispatchEvent(new CustomEvent("leiloe:toast", { detail: msg }));
 
 // ====================================================================
 // MEUS DADOS — profile / account
 // ====================================================================
-function ProfileScreen({ onNavigate, onOpenLot }) {
-  const [prefs, setPrefs] = useStateAcc({ outbid: true, ending: true, newLots: false, email: true });
+export function ProfileScreen({ onNavigate, onOpenLot, lots = LOTS }) {
+  const [prefs, setPrefs] = useState({ outbid: true, ending: true, newLots: false, email: true });
   const togglePref = (k) => setPrefs(p => ({ ...p, [k]: !p[k] }));
-  const saved = window.LOTS.filter(l => l.saved);
+  const saved = lots.filter(l => l.saved);
 
   return (
     <div style={{ maxWidth: 1080, margin: "0 auto", padding: "40px 40px 120px", animation: "leiloe-fadein 0.3s ease" }}>
@@ -166,5 +167,3 @@ function ToggleRow({ label, checked, onChange, last }) {
     </label>
   );
 }
-
-Object.assign(window, { Toast, ProfileScreen, notify });

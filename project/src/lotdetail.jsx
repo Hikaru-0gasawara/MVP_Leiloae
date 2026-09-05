@@ -1,13 +1,14 @@
 // Lot detail (the hero screen) + Win confirmation.
-
-const { useState: useStateLD, useMemo: useMemoLD, useEffect: useEffectLD } = React;
+import { useState, useMemo, useEffect } from "react";
+import { GLOSSARY, VENDORS, fmtBRL, fmtNum, simulateCost } from "./data.js";
+import { Icon, Badge, Button, Countdown, GlossaryTerm, LotPhoto } from "./components.jsx";
 
 // ============================================================
 // LOT DETAIL — the most important screen
 // ============================================================
-function LotDetailScreen({ lot, onBack, onBid, onSave }) {
-  const [tab, setTab] = useStateLD("desc"); // desc | rules | docs | glossary
-  const [simulatorValue, setSimulatorValue] = useStateLD(lot.currentBid + 1000);
+export function LotDetailScreen({ lot, onBack, onBid, onSave }) {
+  const [tab, setTab] = useState("desc"); // desc | rules | docs | glossary
+  const [simulatorValue, setSimulatorValue] = useState(lot.currentBid + 1000);
   const vendor = VENDORS[lot.vendor];
   const isCarro = lot.category === "carro";
   const breakdown = simulateCost(simulatorValue);
@@ -41,7 +42,7 @@ function LotDetailScreen({ lot, onBack, onBid, onSave }) {
             {/* Quick facts grid */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 0, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", overflow: "hidden", marginBottom: 24 }}>
               {isCarro ? (
-                <React.Fragment>
+                <>
                   <Fact label="Ano" value={lot.year} />
                   <Fact label="KM rodados" value={`${fmtNum(lot.km)} km`} />
                   <Fact label="Câmbio" value={lot.transmission} />
@@ -50,9 +51,9 @@ function LotDetailScreen({ lot, onBack, onBid, onSave }) {
                   <Fact label="Placa" value={lot.plate} />
                   <Fact label="Estado" value={lot.condition} highlight={lot.condition !== "Sem sinistro"} />
                   <Fact label="Tipo de leilão" value={lot.auctionType} />
-                </React.Fragment>
+                </>
               ) : (
-                <React.Fragment>
+                <>
                   <Fact label="Área" value={`${lot.area}m²`} />
                   <Fact label="Dormitórios" value={lot.bedrooms} />
                   <Fact label="Vagas" value={lot.parking} />
@@ -61,7 +62,7 @@ function LotDetailScreen({ lot, onBack, onBid, onSave }) {
                   <Fact label="Tipo" value={lot.type} />
                   <Fact label={<><GlossaryTerm term="ocupação">Ocupação</GlossaryTerm></>} value={lot.occupancy} highlight={lot.occupancy !== "Vazio"} />
                   <Fact label={<>Tipo de leilão</>} value={lot.auctionType} />
-                </React.Fragment>
+                </>
               )}
             </div>
 
@@ -287,11 +288,11 @@ function Stat2({ label, value }) {
 
 // ---------- Gallery ----------
 function Gallery({ lot, onSave }) {
-  const [idx, setIdx] = useStateLD(0);
-  const [auto, setAuto] = useStateLD(true);
+  const [idx, setIdx] = useState(0);
+  const [auto, setAuto] = useState(true);
   const thumbs = [0, 1, 2, 3];
   // Auto-advance every 3.5s when in auto mode
-  useEffectLD(() => {
+  useEffect(() => {
     if (!auto) return;
     const id = setInterval(() => setIdx(i => (i + 1) % thumbs.length), 3500);
     return () => clearInterval(id);
@@ -353,8 +354,8 @@ function navArrowStyle(side) {
 // ============================================================
 // WIN — Arremate confirmation + post-bid checklist
 // ============================================================
-function WinScreen({ lot, winValue, onNavigate, onTour }) {
-  const [done, setDone] = useStateLD({ pay: false, contract: false, itbi: false, key: false, confirm: false });
+export function WinScreen({ lot, winValue, onNavigate, onTour }) {
+  const [done, setDone] = useState({ pay: false, contract: false, itbi: false, key: false, confirm: false });
   const allDone = Object.values(done).every(Boolean);
 
   return (
@@ -468,7 +469,7 @@ function ChecklistItem({ n, title, body, done, onToggle, deadline, last }) {
 }
 
 function Confetti() {
-  const pieces = useMemoLD(() => {
+  const pieces = useMemo(() => {
     return [...Array(36)].map((_, i) => ({
       x: Math.random() * 100,
       delay: Math.random() * 1.6,
@@ -496,5 +497,3 @@ function Confetti() {
     </div>
   );
 }
-
-Object.assign(window, { LotDetailScreen, WinScreen });

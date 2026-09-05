@@ -1,7 +1,8 @@
 // Account sub-pages: Histórico, Mensagens, Pagamentos, Configurações.
-// Reuses globals: SectionHead, Button, Icon, Badge, LotPhoto, StatCard, fmtBRL, fmtNum, LOTS.
-
-const { useState: useStateAP, useRef: useRefAP, useEffect: useEffectAP } = React;
+import { useState, useRef, useEffect } from "react";
+import { LOTS, fmtBRL } from "./data.js";
+import { SectionHead, Button, Icon } from "./components.jsx";
+import { StatCard } from "./screens.jsx";
 
 // ---------- shared shell ----------
 function PageWrap({ overline, title, subtitle, right, max = 1080, children }) {
@@ -68,10 +69,9 @@ function Chip({ active, children, onClick }) {
 // ====================================================================
 // HISTÓRICO — activity timeline
 // ====================================================================
-function HistoryScreen({ onOpenLot, onNavigate }) {
-  const [filter, setFilter] = useStateAP("tudo");
-  const L = window.LOTS;
-  const byId = (id) => L.find(l => l.id === id);
+export function HistoryScreen({ onOpenLot, onNavigate }) {
+  const [filter, setFilter] = useState("tudo");
+  const byId = (id) => LOTS.find(l => l.id === id);
 
   const events = [
     { id: "e1", kind: "outbid", day: "Hoje", time: "14:32", lot: "lot-tatuape-studio", title: "Seu lance foi superado", detail: "Novo lance de R$ 158.200 — R$ 1.500 acima do seu." },
@@ -178,15 +178,15 @@ const CONVERSATIONS = [
   },
 ];
 
-function MessagesScreen() {
-  const [activeId, setActiveId] = useStateAP(CONVERSATIONS[0].id);
-  const [drafts, setDrafts] = useStateAP({});
-  const [threads, setThreads] = useStateAP(() => Object.fromEntries(CONVERSATIONS.map(c => [c.id, c.msgs])));
-  const bottomRef = useRefAP(null);
+export function MessagesScreen() {
+  const [activeId, setActiveId] = useState(CONVERSATIONS[0].id);
+  const [drafts, setDrafts] = useState({});
+  const [threads, setThreads] = useState(() => Object.fromEntries(CONVERSATIONS.map(c => [c.id, c.msgs])));
+  const bottomRef = useRef(null);
   const active = CONVERSATIONS.find(c => c.id === activeId);
   const msgs = threads[activeId] || [];
 
-  useEffectAP(() => { if (bottomRef.current) bottomRef.current.scrollTop = bottomRef.current.scrollHeight; }, [activeId, msgs.length]);
+  useEffect(() => { if (bottomRef.current) bottomRef.current.scrollTop = bottomRef.current.scrollHeight; }, [activeId, msgs.length]);
 
   const send = () => {
     const text = (drafts[activeId] || "").trim();
@@ -271,7 +271,7 @@ function MessagesScreen() {
 // ====================================================================
 // PAGAMENTOS — methods + billing history
 // ====================================================================
-function PaymentsScreen({ notify }) {
+export function PaymentsScreen({ notify }) {
   const methods = [
     { id: "pix", icon: <Icon.pix size={17} />, title: "Pix", detail: "Chave: camila@email.com", tag: "principal" },
     { id: "visa", icon: <Icon.card size={17} />, title: "Visa de crédito", detail: "•••• 4821 · vence 09/28" },
@@ -337,10 +337,10 @@ function PaymentsScreen({ notify }) {
 // ====================================================================
 // CONFIGURAÇÕES — settings
 // ====================================================================
-function SettingsScreen({ theme = "dark", onSetTheme, onSignOut, onOpenPage, notify }) {
-  const [prefs, setPrefs] = useStateAP({ outbid: true, ending: true, newLots: false, email: true, whatsapp: true });
-  const [privacy, setPrivacy] = useStateAP({ publicProfile: false, analytics: true });
-  const [lang, setLang] = useStateAP("pt-BR");
+export function SettingsScreen({ theme = "dark", onSetTheme, onSignOut, onOpenPage, notify }) {
+  const [prefs, setPrefs] = useState({ outbid: true, ending: true, newLots: false, email: true, whatsapp: true });
+  const [privacy, setPrivacy] = useState({ publicProfile: false, analytics: true });
+  const [lang, setLang] = useState("pt-BR");
   const toggle = (set, k) => set(p => ({ ...p, [k]: !p[k] }));
 
   const themeOpts = [
@@ -417,5 +417,3 @@ function SettingsScreen({ theme = "dark", onSetTheme, onSignOut, onOpenPage, not
     </PageWrap>
   );
 }
-
-Object.assign(window, { HistoryScreen, MessagesScreen, PaymentsScreen, SettingsScreen });

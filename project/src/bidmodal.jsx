@@ -1,16 +1,17 @@
-// Bid modal — matches screenshot: photo + title + "Lance atual" header,
-// suggested value, increment chips, cost breakdown with Taxa Leiloaê (1,5%),
-// auto-bid toggle, "Primeiro lance protegido" banner, confirm CTA, WhatsApp link.
+// Bid modal — photo + title + "Lance atual" header, suggested value, increment
+// chips, cost breakdown with Taxa Leiloaê (1,5%), auto-bid toggle,
+// "Primeiro lance protegido" banner, confirm CTA, WhatsApp link.
+import { useState, useEffect } from "react";
+import { fmtBRL, simulateCost } from "./data.js";
+import { Icon, Button, GlossaryTerm } from "./components.jsx";
 
-const { useState: useStateBM, useEffect: useEffectBM, useMemo: useMemoBM } = React;
+export function BidModal({ lot, open, onClose, onWin, isFirstBid = true, onSeeLot, suggestedValue }) {
+  const [step, setStep] = useState("input"); // input | confirm | success
+  const [value, setValue] = useState(0);
+  const [autoBid, setAutoBid] = useState(false);
+  const [autoBidMax, setAutoBidMax] = useState(0);
 
-function BidModal({ lot, open, onClose, onWin, isFirstBid = true, onSeeLot, suggestedValue }) {
-  const [step, setStep] = useStateBM("input"); // input | confirm | success
-  const [value, setValue] = useStateBM(0);
-  const [autoBid, setAutoBid] = useStateBM(false);
-  const [autoBidMax, setAutoBidMax] = useStateBM(0);
-
-  useEffectBM(() => {
+  useEffect(() => {
     if (lot && open) {
       setStep("input");
       const start = suggestedValue || (lot.currentBid + 1000);
@@ -21,7 +22,7 @@ function BidModal({ lot, open, onClose, onWin, isFirstBid = true, onSeeLot, sugg
   }, [lot, open, suggestedValue]);
 
   // ESC to close
-  useEffectBM(() => {
+  useEffect(() => {
     if (!open) return;
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", onKey);
@@ -265,7 +266,7 @@ function CostRow({ label, value }) {
 }
 
 function BidConfirmStep({ lot, value, breakdown, autoBid, autoBidMax, isFirstBid, onBack, onConfirm, onClose }) {
-  const [agree, setAgree] = useStateBM(false);
+  const [agree, setAgree] = useState(false);
   return (
     <div>
       <div style={{ padding: "22px 26px 0", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -373,5 +374,3 @@ function BidSuccessStep({ lot, value, isFirstBid, onClose, onWin }) {
     </div>
   );
 }
-
-Object.assign(window, { BidModal });

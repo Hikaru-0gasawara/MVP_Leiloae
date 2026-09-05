@@ -1,10 +1,11 @@
-// Shared UI components for Leiloê.
-// Exports to window so they're available across other JSX files.
-
-const { useState, useEffect, useRef, useMemo, useCallback } = React;
+// Shared UI components for Leiloaê.
+import { useState, useEffect, useRef, useMemo } from "react";
+import ReactDOM from "react-dom";
+import { GLOSSARY, VENDORS, fmtBRL, fmtNum, fmtTimeLeft } from "./data.js";
+import { useCompare } from "./state/compareStore.js";
 
 // ---------- Hooks ----------
-function useNow(intervalMs = 1000) {
+export function useNow(intervalMs = 1000) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), intervalMs);
@@ -29,7 +30,7 @@ const btnBase = {
   whiteSpace: "nowrap",
 };
 
-function Button({ children, variant = "primary", size = "md", icon, iconRight, full, onClick, type = "button", style, disabled, ...rest }) {
+export function Button({ children, variant = "primary", size = "md", icon, iconRight, full, onClick, type = "button", style, disabled, ...rest }) {
   const sizeStyle = size === "lg" ? { padding: "16px 26px", fontSize: 16 }
                   : size === "sm" ? { padding: "8px 14px", fontSize: 13 }
                   : { padding: "12px 20px", fontSize: 14.5 };
@@ -60,7 +61,7 @@ function Button({ children, variant = "primary", size = "md", icon, iconRight, f
 }
 
 // ---------- Badge ----------
-function Badge({ children, tone = "neutral", style }) {
+export function Badge({ children, tone = "neutral", style }) {
   const tones = {
     neutral: { background: "rgba(255,255,255,0.06)", color: "var(--text-dim)", border: "1px solid var(--border)" },
     accent:  { background: "var(--accent-dim)", color: "var(--accent-ink)", border: "1px solid rgba(181,159,240,0.25)" },
@@ -81,7 +82,7 @@ function Badge({ children, tone = "neutral", style }) {
 }
 
 // ---------- Glossary inline tooltip ----------
-function GlossaryTerm({ term, children }) {
+export function GlossaryTerm({ term, children }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null); // { left, top, flip, arrowLeft }
   const ref = useRef(null);
@@ -186,7 +187,7 @@ function GlossaryTerm({ term, children }) {
 }
 
 // ---------- Countdown ----------
-function Countdown({ endsAt, compact, big, onDark }) {
+export function Countdown({ endsAt, compact, big, onDark }) {
   const now = useNow(1000);
   const left = fmtTimeLeft(endsAt - now);
   const color = onDark
@@ -209,7 +210,7 @@ function Countdown({ endsAt, compact, big, onDark }) {
 }
 
 // ---------- Lot Photo placeholder ----------
-function LotPhoto({ lot, height = 200, rounded = "var(--radius)", showBadges = true, children, autoRotate, photoIndex = 0 }) {
+export function LotPhoto({ lot, height = 200, rounded = "var(--radius)", showBadges = true, children, autoRotate, photoIndex = 0 }) {
   const glyphs = {
     studio: "▢",
     apto:   "◫",
@@ -293,12 +294,12 @@ function LotPhoto({ lot, height = 200, rounded = "var(--radius)", showBadges = t
 }
 
 // ---------- Lot Card (gradient-led, "Dar lance" CTA, vendor footer) ----------
-function LotCard({ lot, onClick, onSave, onBid, density = "regular" }) {
+export function LotCard({ lot, onClick, onSave, onBid, density = "regular" }) {
   const isCarro = lot.category === "carro";
   const reference = isCarro ? lot.fipe : lot.appraised;
   const discount = Math.round((1 - lot.currentBid / reference) * 100);
   const compact = density === "compact";
-  const vendor = (window.VENDORS && window.VENDORS[lot.vendor]) || { name: "", rating: 4.7, reviews: 100 };
+  const vendor = VENDORS[lot.vendor] || { name: "", rating: 4.7, reviews: 100 };
   const glyphs = { studio: "▢", apto: "◫", casa: "⌂", sedan: "🚗", hatch: "🚗", suv: "🚙" };
   const compare = useCompare();
   const isComparing = compare.has(lot.id);
@@ -419,17 +420,17 @@ function LotCard({ lot, onClick, onSave, onBid, density = "regular" }) {
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, color: "rgba(244,241,232,0.7)", fontSize: 12.5, marginTop: 8 }}>
               {isCarro ? (
-                <React.Fragment>
+                <>
                   <span>{lot.fuel}</span><span style={dotS} />
                   <span>{lot.color}</span><span style={dotS} />
                   <span style={{ color: lot.condition === "Sem sinistro" ? "var(--success)" : "var(--warning)" }}>{lot.condition}</span>
-                </React.Fragment>
+                </>
               ) : (
-                <React.Fragment>
+                <>
                   <span>{lot.area}m²</span><span style={dotS} />
                   <span>{lot.bedrooms === 1 ? "1 dorm." : `${lot.bedrooms} dorms.`}</span><span style={dotS} />
                   <span>{lot.occupancy}</span>
-                </React.Fragment>
+                </>
               )}
             </div>
           </div>
@@ -494,7 +495,7 @@ function LotCard({ lot, onClick, onSave, onBid, density = "regular" }) {
 const dotS = { width: 3, height: 3, borderRadius: "50%", background: "currentColor", display: "inline-block", opacity: 0.5 };
 
 // ---------- Section header (with serif accent) ----------
-function SectionHead({ overline, title, subtitle, right, large }) {
+export function SectionHead({ overline, title, subtitle, right, large }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 24, marginBottom: 24, flexWrap: "wrap" }}>
       <div style={{ flex: "1 1 auto", minWidth: 0 }}>
@@ -515,7 +516,7 @@ function SectionHead({ overline, title, subtitle, right, large }) {
 }
 
 // ---------- Icons (minimal inline set) ----------
-const Icon = {
+export const Icon = {
   search:    (p) => <svg width={p.size||16} height={p.size||16} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="7" cy="7" r="5"/><path d="M11 11l3 3"/></svg>,
   bell:      (p) => <svg width={p.size||16} height={p.size||16} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 2v1M4 7a4 4 0 1 1 8 0v2l1.5 2H2.5L4 9V7z"/><path d="M6 13a2 2 0 1 0 4 0"/></svg>,
   heart:     (p) => <svg width={p.size||16} height={p.size||16} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 14s-5-3-5-7a3 3 0 0 1 5-2 3 3 0 0 1 5 2c0 4-5 7-5 7z"/></svg>,
@@ -544,38 +545,3 @@ const Icon = {
   help:      (p) => <svg width={p.size||16} height={p.size||16} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="6"/><path d="M6.3 6.2a1.8 1.8 0 0 1 3.4.6c0 1.2-1.7 1.5-1.7 2.7M8 11.4v.4"/></svg>,
   doc:       (p) => <svg width={p.size||16} height={p.size||16} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M4 2h5l3 3v9H4z"/><path d="M9 2v3h3M6 8h4M6 10.5h4"/></svg>,
 };
-
-const keyframes = `
-@keyframes leiloe-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-@keyframes leiloe-fadein {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-@keyframes leiloe-scalein {
-  from { opacity: 0; transform: scale(0.96); }
-  to   { opacity: 1; transform: scale(1); }
-}
-@keyframes leiloe-marquee {
-  from { transform: translateX(0); }
-  to   { transform: translateX(-50%); }
-}
-@keyframes leiloe-confetti {
-  0%   { transform: translateY(-20px) rotate(0); opacity: 1; }
-  100% { transform: translateY(120vh) rotate(720deg); opacity: 0; }
-}
-@keyframes leiloe-shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-`;
-
-function GlobalStyles() {
-  return <style dangerouslySetInnerHTML={{ __html: keyframes }} />;
-}
-
-Object.assign(window, {
-  useNow, Button, Badge, GlossaryTerm, Countdown, LotPhoto, LotCard, SectionHead, Icon, GlobalStyles,
-});

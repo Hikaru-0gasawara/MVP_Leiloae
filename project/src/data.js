@@ -1,7 +1,7 @@
-// Sample data for the Leiloê prototype.
+// Sample data for the Leiloaê app.
 // All numbers fictional. Imóveis em SP até R$250k.
 
-const GLOSSARY = {
+export const GLOSSARY = {
   "praceamento": "Cada uma das etapas em que um imóvel é colocado à venda em leilão judicial. Costuma ter 1ª praça (preço cheio) e 2ª praça (com desconto).",
   "praça": "Cada tentativa de venda do imóvel no leilão judicial. 1ª praça sai pelo preço de avaliação; 2ª praça já vem com desconto.",
   "hasta pública": "Outro nome para leilão judicial — venda de bens determinada pela justiça.",
@@ -16,7 +16,7 @@ const GLOSSARY = {
   "carta de arrematação": "O documento que comprova que você arrematou. É com ele que você registra o imóvel no seu nome.",
 };
 
-const VENDORS = {
+export const VENDORS = {
   "vendor-justi": {
     id: "vendor-justi",
     name: "Justi Leilões",
@@ -69,7 +69,7 @@ const VENDORS = {
   },
 };
 
-const LOTS = [
+export const LOTS = [
   {
     id: "lot-mooca-studio",
     category: "imovel",
@@ -446,7 +446,7 @@ const CAR_LOTS = [
 LOTS.push(...CAR_LOTS);
 
 // Format helpers
-const fmtBRL = (n, withCents = false) => {
+export const fmtBRL = (n, withCents = false) => {
   if (n == null || isNaN(n)) return "—";
   return n.toLocaleString("pt-BR", {
     style: "currency",
@@ -456,9 +456,9 @@ const fmtBRL = (n, withCents = false) => {
   });
 };
 
-const fmtNum = (n) => n.toLocaleString("pt-BR");
+export const fmtNum = (n) => n.toLocaleString("pt-BR");
 
-const fmtTimeLeft = (ms) => {
+export const fmtTimeLeft = (ms) => {
   if (ms <= 0) return { text: "Encerrado", short: "00:00", hot: false, ended: true };
   const totalSec = Math.floor(ms / 1000);
   const d = Math.floor(totalSec / 86400);
@@ -481,7 +481,7 @@ const fmtTimeLeft = (ms) => {
 
 // Cost simulator — given lance, returns full breakdown.
 // Taxa Leiloaê = 1.5% (commission take rate from the product model)
-function simulateCost(lance) {
+export function simulateCost(lance) {
   if (!lance || lance <= 0) {
     return { lance: 0, comissao: 0, taxa: 0, itbi: 0, registro: 0, total: 0 };
   }
@@ -513,5 +513,3 @@ const LOT_PHOTOS = {
   "car-fiat-mobi":        ["1541899481282-d53bffe3c35d", "1502877338535-766e1452684a", "1549317661-bd32c8ce0db2"],
 };
 LOTS.forEach((l) => { l.photos = (LOT_PHOTOS[l.id] || []).map(_img); });
-
-Object.assign(window, { GLOSSARY, VENDORS, LOTS, fmtBRL, fmtNum, fmtTimeLeft, simulateCost });
