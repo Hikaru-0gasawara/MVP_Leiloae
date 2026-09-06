@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
+import { installTelemetry } from "./lib/telemetry.js";
 
 // Fontes auto-hospedadas: sem requisição a terceiros no carregamento — o CSS
 // externo do Google era bloqueante e enviava o IP de cada visitante (FRONT-014).
@@ -16,6 +17,10 @@ import "@fontsource/jetbrains-mono/500.css";
 import "@fontsource/jetbrains-mono/600.css";
 
 import "./index.css";
+
+// Captura global de erro antes de montar: se a própria montagem falhar, o
+// evento ainda é relatado (DEVOPS-002).
+installTelemetry();
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>

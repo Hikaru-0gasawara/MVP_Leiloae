@@ -220,21 +220,49 @@ test.describe("SEC-001/002 — honestidade do ambiente de demonstração", () =>
 });
 
 test.describe("FRONT-003/004 — orçamento de imagens e timers", () => {
-  test("a listagem carrega uma imagem por card e mantém um único timer", async ({ page }) => {
-    await page.addInitScript(() => {
-      window.__intervals = 0;
-      const original = window.setInterval;
-      window.setInterval = (...args) => { window.__intervals++; return original(...args); };
-    });
+  // Orçamento do item 8 do plano: "≤ 2 imagens por card e ≤ 2 timers ativos,
+  // medidos". Os números são absolutos de propósito — um limite proporcional
+  // ao número de cards deixaria voltar exatamente o defeito original, em que o
+  // custo crescia com o catálogo.
+  const contarTimers = (page) => page.addInitScript(() => {
+    window.__vivos = new Set();
+    const si = window.setInterval, ci = window.clearInterval;
+    window.setInterval = function (...a) { const id = si.apply(window, a); window.__vivos.add(id); return id; };
+    window.clearInterval = function (id) { window.__vivos.delete(id); return ci.call(window, id); };
+  });
+
+  test("a listagem fica dentro do orçamento de imagens e timers", async ({ page }) => {
+    await contarTimers(page);
     await irParaLeiloes(page);
     await page.waitForTimeout(1500);
 
-    const imagens = await page.locator("img").count();
     const cards = await page.locator("article").count();
-    expect(imagens).toBeLessThanOrEqual(cards + 2);
+    const imagens = await page.locator("img").count();
+    expect(cards).toBeGreaterThan(5); // o orçamento só significa algo com catálogo cheio
+    expect(imagens / cards).toBeLessThanOrEqual(2);
 
-    // Antes: 56 intervalos ativos. Agora o relógio é único; sobra a rotação de fotos.
-    const intervalos = await page.evaluate(() => window.__intervals);
-    expect(intervalos).toBeLessThanOrEqual(cards + 3);
+    // Antes: 56 intervalos. Depois do relógio único ainda sobravam 14 — um por
+    // card, da rotação de fotos. Agora o índice é derivado do relógio.
+    expect(await page.evaluate(() => window.__vivos.size)).toBeLessThanOrEqual(2);
+  });
+
+  test("a página do lote fica dentro do mesmo orçamento", async ({ page }) => {
+    await contarTimers(page);
+    await page.goto("/lote/lot-mooca-studio");
+    await expect(page.getByRole("heading", { name: "Studio na Mooca", level: 1 })).toBeVisible();
+    await page.waitForTimeout(1500);
+    expect(await page.evaluate(() => window.__vivos.size)).toBeLessThanOrEqual(2);
+  });
+
+  test("nenhum timer sobrevive à aba oculta", async ({ page }) => {
+    await contarTimers(page);
+    await irParaLeiloes(page);
+    await page.waitForTimeout(1000);
+    await page.evaluate(() => {
+      Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await page.waitForTimeout(500);
+    expect(await page.evaluate(() => window.__vivos.size)).toBe(0);
   });
 });

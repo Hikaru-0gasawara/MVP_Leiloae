@@ -1,4 +1,10 @@
 # Cabeçalhos de segurança (SEC-006) — formato Netlify/Cloudflare Pages.
+#
+# `connect-src 'self'` é proposital: a aplicação não fala com nenhum host
+# externo. Ao configurar VITE_ERROR_ENDPOINT ou VITE_ANALYTICS_ENDPOINT, some
+# o host aqui — senão o envio é bloqueado em silêncio.
+# `img-src` só cita o banco de imagens porque as fotos vêm de lá; com
+# VITE_PHOTO_BASE=/fotos (ver npm run fotos:baixar), esse host pode sair.
 /*
   Content-Security-Policy: default-src 'self'; img-src 'self' data: https://images.unsplash.com; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
   Strict-Transport-Security: max-age=31536000; includeSubDomains

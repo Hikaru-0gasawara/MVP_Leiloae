@@ -33,4 +33,13 @@ export default [
     files: ["**/*.test.{js,jsx}", "src/test/**"],
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
   },
+  {
+    // Scripts de build/manutenção: rodam no Node, fora do bundle.
+    files: ["scripts/**/*.mjs", "*.config.js"],
+    languageOptions: {
+      ecmaVersion: 2023,
+      sourceType: "module",
+      globals: { ...globals.node },
+    },
+  },
 ];

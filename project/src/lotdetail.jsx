@@ -1,8 +1,9 @@
 // Lot detail (the hero screen) + Win confirmation.
-import { useState, useMemo, useEffect, useId } from "react";
+import { useState, useMemo, useId } from "react";
 import { GLOSSARY, VENDORS } from "./data.js";
 import { simulateCost, isEnded, minBidFor, discountPct, referenceValueOf, formatBRL as fmtBRL, formatNumber as fmtNum } from "./domain/auction.js";
-import { useNow, usePageVisible } from "./lib/clock.js";
+import { useNow } from "./lib/clock.js";
+import { usePrefersReducedMotion } from "./lib/motion.js";
 import { CONTACT, hasWhatsApp, openExternal } from "./lib/config.js";
 import { Icon, Badge, Button, Countdown, GlossaryTerm, LotPhoto } from "./components.jsx";
 
@@ -309,18 +310,17 @@ function Stat2({ label, value }) {
 
 // ---------- Gallery ----------
 function Gallery({ lot, onSave }) {
-  const [idx, setIdx] = useState(0);
+  const [manualIdx, setManualIdx] = useState(0);
   const [auto, setAuto] = useState(true);
   const thumbs = [0, 1, 2, 3];
-  const visible = usePageVisible();
-  // Avança a cada 3,5s no modo automático — suspenso com a aba oculta e para
-  // quem pediu menos movimento no sistema.
-  useEffect(() => {
-    if (!auto || !visible) return;
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return;
-    const id = setInterval(() => setIdx(i => (i + 1) % thumbs.length), 3500);
-    return () => clearInterval(id);
-  }, [auto, visible, thumbs.length]);
+  const now = useNow();
+  const semMovimento = usePrefersReducedMotion();
+  // Índice derivado do relógio compartilhado, como nos cards: sem timer próprio
+  // e já suspenso em aba oculta (FRONT-004). O clique numa miniatura sai do
+  // modo automático e passa a mandar no índice.
+  const rodando = auto && !semMovimento;
+  const idx = rodando ? Math.floor(now / 3500) % thumbs.length : manualIdx;
+  const escolher = (i) => { setAuto(false); setManualIdx(i); };
   return (
     <div>
       <div style={{ position: "relative" }}>
@@ -339,10 +339,10 @@ function Gallery({ lot, onSave }) {
             {lot.saved ? "♥" : "♡"}
           </button>
           {/* prev / next */}
-          <button onClick={(e) => { e.stopPropagation(); setAuto(false); setIdx(i => (i - 1 + thumbs.length) % thumbs.length); }} style={navArrowStyle("left")} aria-label="Anterior">
+          <button onClick={(e) => { e.stopPropagation(); escolher((idx - 1 + thumbs.length) % thumbs.length); }} style={navArrowStyle("left")} aria-label="Anterior">
             <Icon.arrowL size={16} />
           </button>
-          <button onClick={(e) => { e.stopPropagation(); setAuto(false); setIdx(i => (i + 1) % thumbs.length); }} style={navArrowStyle("right")} aria-label="Próximo">
+          <button onClick={(e) => { e.stopPropagation(); escolher((idx + 1) % thumbs.length); }} style={navArrowStyle("right")} aria-label="Próximo">
             <Icon.arrowR size={16} />
           </button>
         </LotPhoto>
@@ -355,7 +355,7 @@ function Gallery({ lot, onSave }) {
           <button
             key={i}
             type="button"
-            onClick={() => { setAuto(false); setIdx(i); }}
+            onClick={() => escolher(i)}
             aria-label={`Ver foto ${i + 1} de ${thumbs.length}`}
             aria-current={idx === i ? "true" : undefined}
             style={{

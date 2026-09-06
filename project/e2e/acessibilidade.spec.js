@@ -44,15 +44,33 @@ const ROTAS = [
 ];
 
 // Os dois temas: o claro reprovava em pontos que o escuro passava.
+//
+// Cada rota é varrida em dois instantes. Sem isso a suíte dependia da hora em
+// que rodava: o selo "encerrando" (--hot-ink) só existe na última hora de um
+// lote, e uma falha de contraste ali passou dias invisível — aparecia e sumia
+// conforme o ciclo de 48h da agenda. Aqui os dois estados são forçados.
+const MOMENTOS = [
+  ["catálogo aberto", 0],
+  // 47h à frente: a agenda de 48h coloca lotes na última hora e acende o selo.
+  ["lote encerrando", 47 * 60 * 60 * 1000],
+];
+
 for (const tema of ["dark", "light"]) {
   for (const [nome, rota] of ROTAS) {
-    test(`sem violação séria de acessibilidade: ${nome} (tema ${tema})`, async ({ page }) => {
-      await page.addInitScript((t) => localStorage.setItem("leiloe:theme", t), tema);
-      await page.goto(rota);
-      await page.waitForSelector("main");
-      const graves = serias(await analisar(page));
-      expect(graves, `\n${descrever(graves)}\n`).toEqual([]);
-    });
+    for (const [momento, avanco] of MOMENTOS) {
+      test(`sem violação séria: ${nome} · tema ${tema} · ${momento}`, async ({ page }) => {
+        await page.addInitScript((t) => localStorage.setItem("leiloe:theme", t), tema);
+        if (avanco) await page.clock.install();
+        await page.goto(rota);
+        await page.waitForSelector("main");
+        if (avanco) {
+          await page.clock.fastForward(avanco);
+          await page.waitForTimeout(300);
+        }
+        const graves = serias(await analisar(page));
+        expect(graves, `\n${descrever(graves)}\n`).toEqual([]);
+      });
+    }
   }
 }
 

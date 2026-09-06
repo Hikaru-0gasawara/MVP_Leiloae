@@ -8,7 +8,9 @@
 // As imagens são de banco de imagens e, em modo demonstração, a interface as
 // rotula como ilustrativas (SEC-007).
 
-const BASE = "https://images.unsplash.com/photo-";
+import { PHOTO_BASE } from "./config.js";
+
+const UNSPLASH = "https://images.unsplash.com/photo-";
 
 /** Larguras oferecidas ao navegador, por contexto de uso. */
 export const PHOTO_SIZES = {
@@ -17,7 +19,10 @@ export const PHOTO_SIZES = {
   hero: { widths: [720, 1100, 1600], sizes: "(max-width: 900px) 100vw, 800px" },
 };
 
-const url = (id, w) => `${BASE}${id}?auto=format&fit=crop&w=${w}&q=70`;
+// Com VITE_PHOTO_BASE definido, as fotos vêm do próprio domínio e nenhuma
+// requisição sai para terceiros no carregamento.
+const url = (id, w) =>
+  PHOTO_BASE ? `${PHOTO_BASE}/${id}-${w}.jpg` : `${UNSPLASH}${id}?auto=format&fit=crop&w=${w}&q=70`;
 
 /**
  * @param {string} id identificador da foto no Unsplash

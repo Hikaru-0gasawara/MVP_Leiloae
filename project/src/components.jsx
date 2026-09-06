@@ -6,7 +6,8 @@ import {
   formatBRL as fmtBRL, formatNumber as fmtNum, timeLeft,
   discountPct, isEnded, referenceValueOf,
 } from "./domain/auction.js";
-import { useNow, usePageVisible } from "./lib/clock.js";
+import { useNow } from "./lib/clock.js";
+import { usePrefersReducedMotion, offsetFromId } from "./lib/motion.js";
 import { photoSources, photoAlt } from "./lib/photos.js";
 import { IS_DEMO } from "./lib/config.js";
 import { useCompare } from "./state/compareStore.js";
@@ -233,20 +234,19 @@ function LotImage({ lot, index, context, height }) {
 }
 
 /**
- * Rotação automática de fotos, pausada quando o usuário prefere menos movimento
- * e enquanto a aba está oculta — ninguém vê a troca em segundo plano, e cada
- * card mantinha um timer próprio trocando imagens ali (FRONT-004).
+ * Rotação automática de fotos (FRONT-004).
+ *
+ * O índice é *derivado* do relógio compartilhado, não de um timer próprio:
+ * cada card mantinha um `setInterval`, então uma listagem de 14 lotes ficava
+ * com 15 timers ativos — e o custo crescia com o catálogo. Como o relógio já
+ * pausa em aba oculta, a rotação pausa junto de graça. O `seed` escalona os
+ * cards para que não troquem todos no mesmo segundo.
  */
-function useRotatingIndex(length, intervalMs, enabled = true) {
-  const [idx, setIdx] = useState(0);
-  const visible = usePageVisible();
-  useEffect(() => {
-    if (!enabled || !visible || length <= 1) return;
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) return;
-    const id = setInterval(() => setIdx((i) => (i + 1) % length), intervalMs);
-    return () => clearInterval(id);
-  }, [length, intervalMs, enabled, visible]);
-  return length > 0 ? idx % length : 0;
+function useRotatingIndex(length, intervalMs, enabled = true, seed = 0) {
+  const now = useNow();
+  const semMovimento = usePrefersReducedMotion();
+  if (!enabled || semMovimento || length <= 1) return 0;
+  return Math.floor((now + seed) / intervalMs) % length;
 }
 
 // ---------- Lot Photo ----------
@@ -255,7 +255,7 @@ export function LotPhoto({ lot, height = 200, rounded = "var(--radius)", showBad
   const glyphs = { studio: "▢", apto: "◫", casa: "⌂", sedan: "🚗", hatch: "🚗", suv: "🚙" };
   const isCarro = lot.category === "carro";
   const total = lot.photoIds?.length || 0;
-  const rotated = useRotatingIndex(total, 3200, Boolean(autoRotate));
+  const rotated = useRotatingIndex(total, 3200, Boolean(autoRotate), offsetFromId(lot.id, 3200));
   const activeIdx = autoRotate ? rotated : photoIndex;
   const gradient = lot.photo || "";
   const ended = isEnded(lot, now);
@@ -307,7 +307,7 @@ export function LotCard({ lot, onClick, onSave, onBid, density = "regular" }) {
   const compare = useCompare();
   const isComparing = compare.has(lot.id);
   const total = lot.photoIds?.length || 0;
-  const activeIdx = useRotatingIndex(total, 4500);
+  const activeIdx = useRotatingIndex(total, 4500, true, offsetFromId(lot.id, 4500));
   const ended = isEnded(lot, now);
   const titleId = `lot-title-${lot.id}`;
 

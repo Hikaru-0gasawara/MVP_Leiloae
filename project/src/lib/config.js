@@ -32,6 +32,14 @@ export const COMPANY = {
   cnpj: env.VITE_COMPANY_CNPJ || "",
 };
 
+/**
+ * Origem das fotos dos lotes. Vazio = banco de imagens externo (uma requisição
+ * a terceiro em cada carregamento, e o IP de quem visita vai junto). Apontando
+ * para um caminho local — `/fotos`, populado por `npm run fotos:baixar` — a
+ * aplicação carrega sem tocar em nenhum host de terceiro (FRONT-014/SEC-006).
+ */
+export const PHOTO_BASE = env.VITE_PHOTO_BASE || "";
+
 export const hasWhatsApp = () => Boolean(CONTACT.whatsappUrl);
 
 /** Abre link externo sem expor `window.opener` (SEC-005). */

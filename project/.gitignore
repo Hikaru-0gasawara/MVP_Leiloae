@@ -11,3 +11,6 @@ coverage
 .env
 .env.local
 .env.*.local
+
+# Fotos baixadas por scripts/baixar-fotos.mjs (não versionadas)
+public/fotos

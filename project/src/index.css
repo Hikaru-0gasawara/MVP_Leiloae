@@ -46,11 +46,15 @@
   --text-mute: #686170;
   --accent-dim:#E7DEFB;
   --accent-ink:#5E4AA8;
-  /* Escurecido de #1B8A5A: sobre --success-dim ficava em 3,68:1. */
-  --success-ink:#0A7949;
-  --warning-ink:#9A5B0E;
-  --danger-ink:#C5332C;
-  --hot-ink:   #D33F28;
+  /* Tintas semânticas do tema claro: todas verificadas contra a superfície
+     mais escura em que aparecem (--surface-3 e os fundos "dim"), não só contra
+     o fundo da página. Antes, ficavam entre 3,6:1 e 4,2:1 — o --hot-ink do
+     ticker só aparecia quando algum lote entrava na última hora, então o
+     defeito passava despercebido a maior parte do tempo. */
+  --success-ink:#037242;
+  --warning-ink:#935407;
+  --danger-ink: #BC2A23;
+  --hot-ink:    #BE2A13;
   --success-dim:#DCF1E7;
   --shadow:    0 1px 0 rgba(255,255,255,0.6) inset, 0 18px 40px -22px rgba(28,20,40,0.28);
 }

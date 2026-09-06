@@ -5,6 +5,7 @@ import { isEnded, minBidFor } from "./domain/auction.js";
 import { useNow } from "./lib/clock.js";
 import { IS_DEMO } from "./lib/config.js";
 import { routeToPath, pathToRoute, routeTitle } from "./lib/router.js";
+import { track, FUNIL } from "./lib/telemetry.js";
 import { userReducer, loadUserState, saveUserState, applyUserState, myBids } from "./state/userState.js";
 import { compareStore } from "./state/compareStore.js";
 import { NavB, NotificationsPanel } from "./nav.jsx";
@@ -82,7 +83,10 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: "instant" });
   }, []);
 
-  const openLot = useCallback((lot) => navigate("lot", lot.id), [navigate]);
+  const openLot = useCallback((lot) => {
+    track(FUNIL.verLote, { lote: lot.id, categoria: lot.category });
+    navigate("lot", lot.id);
+  }, [navigate]);
   const openPage = useCallback((pageId) => navigate("page", null, { pageId }), [navigate]);
 
   const notify = (msg) => window.dispatchEvent(new CustomEvent("leiloe:toast", { detail: msg }));
@@ -93,6 +97,7 @@ export default function App() {
       notify("Este leilão já encerrou.");
       return;
     }
+    track(FUNIL.abrirLance, { lote: lot.id, categoria: lot.category });
     setBidSuggestion(suggestion ?? minBidFor(lot));
     setBidLot(lot);
   }, []);
@@ -100,17 +105,24 @@ export default function App() {
   const closeBid = () => { setBidLot(null); setBidSuggestion(null); };
 
   const confirmBid = ({ lot, value, autoMax }) => {
+    // Só identificador e número: nada do que a pessoa digitou sai daqui.
+    track(FUNIL.confirmarLance, { lote: lot.id, categoria: lot.category, valor: value, teto: autoMax || null });
     dispatch({ type: "place-bid", lot, value, autoMax, now: Date.now() });
   };
 
   const cancelBid = (bidId) => {
+    track(FUNIL.cancelarLance, {});
     dispatch({ type: "cancel-bid", bidId, now: Date.now() });
     notify("Lance cancelado dentro da janela de 24h.");
   };
 
   const saveLot = (lot) => dispatch({ type: "toggle-save", lotId: lot.id });
 
-  const onSimulateWin = (lot) => { closeBid(); navigate("win", lot.id); };
+  const onSimulateWin = (lot) => {
+    track(FUNIL.arremate, { lote: lot.id, categoria: lot.category });
+    closeBid();
+    navigate("win", lot.id);
+  };
 
   const onSignOut = () => { setLoggedIn(false); navigate("home"); notify("Você saiu da sua conta"); };
   const onSignIn = () => { setLoggedIn(true); notify("Bem-vinda de volta, Camila"); };
