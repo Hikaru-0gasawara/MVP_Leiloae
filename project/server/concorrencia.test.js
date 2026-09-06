@@ -39,14 +39,36 @@ beforeEach(() => {
 
 afterEach(() => {
   try { db.close(); } catch { /* já fechado */ }
-  rmSync(pasta, { recursive: true, force: true });
+  // Apagar a pasta temporária não pode reprovar um teste que passou. No
+  // Windows, apagar arquivo ainda aberto por outro processo dá EPERM, e o
+  // sistema demora um instante para soltar o descritor depois que a thread
+  // morre — os retries cobrem essa folga; o `catch` cobre o resto.
+  try {
+    rmSync(pasta, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  } catch { /* sobra uma pasta em %TEMP%; o SO limpa */ }
 });
 
+/**
+ * Roda os disputantes e só devolve quando cada thread REALMENTE terminou.
+ *
+ * Resolver no `message` era cedo demais: a resposta chega antes de a thread
+ * morrer, então o teste seguia e apagava o arquivo de banco com as conexões
+ * dos workers ainda abertas nele. No Linux isso passa (o arquivo some do
+ * diretório e continua vivo até o último descritor fechar); no Windows dá
+ * EPERM, e a suíte falhava na limpeza de um teste que tinha passado.
+ */
 const correr = (workers) =>
   Promise.all(workers.map((workerData) => new Promise((resolve, reject) => {
     const w = new Worker(WORKER, { workerData });
-    w.on("message", resolve);
+    /** @type {any} */
+    let resposta;
+    let respondeu = false;
+    w.on("message", (m) => { resposta = m; respondeu = true; });
     w.on("error", reject);
+    w.on("exit", (codigo) => {
+      if (respondeu) resolve(resposta);
+      else reject(new Error(`disputante terminou sem responder (código ${codigo})`));
+    });
   })));
 
 describe("rajada com conexões concorrentes de verdade", () => {

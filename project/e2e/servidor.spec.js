@@ -60,14 +60,21 @@ const primeiroCardAberto = (page) =>
  * Rodando em paralelo, dois testes no mesmo lote se superam e o segundo lance
  * é recusado — corretamente, pelo servidor. O defeito seria o teste, não a
  * aplicação; então cada um recebe o seu.
+ *
+ * A vaga é passada pelo chamador, de propósito. Antes vinha de um contador de
+ * processo somado ao índice do worker; como o índice do lote é o resto da
+ * divisão pelo tamanho do catálogo, dois workers caíam no mesmo lote sempre
+ * que os contadores deles se alinhavam — e a suíte falhava conforme o número
+ * de núcleos da máquina, o que é o pior tipo de teste instável. Com a vaga
+ * escrita em cada chamada, duas iguais são visíveis lendo o arquivo.
  */
-async function abrirLoteExclusivo(page) {
-  const indice = sequencial();
+async function abrirLoteExclusivo(page, vaga) {
   const lote = await page.evaluate(async (i) => {
     const { lotes } = await (await fetch("/api/v1/lotes")).json();
     const abertos = lotes.filter((l) => l.endsAt > Date.now() + 3600e3);
-    return abertos[i % abertos.length];
-  }, indice);
+    if (i >= abertos.length) throw new Error(`vaga ${i} não cabe em ${abertos.length} lotes abertos`);
+    return abertos[i];
+  }, vaga);
   await page.goto(`/lote/${lote.id}`);
   await expect(page.getByRole("heading", { name: lote.title, level: 1 })).toBeVisible();
   return lote;
@@ -85,14 +92,14 @@ test.describe("ARCH-001 — a aplicação vive de dados do servidor", () => {
   test("entrar continua acessível com o catálogo fora do ar", async ({ page }) => {
     // A tela de entrada não depende do catálogo: ficar inacessível junto com
     // ele seria tirar da pessoa justamente a ação que ela ainda pode fazer.
-    await page.route("**/api/v1/lotes", (route) => route.abort("failed"));
+    await page.route("**/api/v1/lotes?*", (route) => route.abort("failed"));
     await page.goto("/entrar");
     await expect(page.getByRole("heading", { name: /Entrar na sua conta/i })).toBeVisible();
     await expect(page.getByLabel("E-mail")).toBeVisible();
   });
 
   test("FRONT-010 — API fora do ar mostra erro com saída, não tela em branco", async ({ page }) => {
-    await page.route("**/api/v1/lotes", (route) => route.abort("failed"));
+    await page.route("**/api/v1/lotes?*", (route) => route.abort("failed"));
     await page.goto("/leiloes");
     await expect(page.getByRole("alert")).toContainText(/Sem conexão|não conseguimos carregar/i);
     await expect(page.getByRole("button", { name: "Tentar de novo" })).toBeVisible();
@@ -100,7 +107,7 @@ test.describe("ARCH-001 — a aplicação vive de dados do servidor", () => {
 
   test("FRONT-010 — 'tentar de novo' recupera quando o servidor volta", async ({ page }) => {
     let falhar = true;
-    await page.route("**/api/v1/lotes", (route) => (falhar ? route.abort("failed") : route.continue()));
+    await page.route("**/api/v1/lotes?*", (route) => (falhar ? route.abort("failed") : route.continue()));
     await page.goto("/leiloes");
     await expect(page.getByRole("button", { name: "Tentar de novo" })).toBeVisible();
 
@@ -110,7 +117,7 @@ test.describe("ARCH-001 — a aplicação vive de dados do servidor", () => {
   });
 
   test("FRONT-002 — erro do servidor não apaga a aplicação", async ({ page }) => {
-    await page.route("**/api/v1/lotes", (route) => route.fulfill({ status: 500, body: "{}" }));
+    await page.route("**/api/v1/lotes?*", (route) => route.fulfill({ status: 500, body: "{}" }));
     await page.goto("/leiloes");
     // O cabeçalho continua de pé e navegável.
     await expect(page.getByRole("banner").or(page.locator("header"))).toBeVisible();
@@ -168,7 +175,7 @@ test.describe("SEC-003 — autenticação de verdade", () => {
 test.describe("BIZ-001/012 — o lance é registrado no servidor", () => {
   test("dar lance sobe o lance do lote para todo mundo, e persiste na recarga", async ({ page, context }) => {
     await criarConta(page);
-    const lote = await abrirLoteExclusivo(page);
+    const lote = await abrirLoteExclusivo(page, 0);
     const titulo = lote.title;
     await page.getByRole("button", { name: /^Dar lance/ }).first().click();
 
@@ -198,7 +205,7 @@ test.describe("BIZ-001/012 — o lance é registrado no servidor", () => {
 
   test("BIZ-004 — 'Meus lances' vem do servidor e some ao sair", async ({ page }) => {
     await criarConta(page);
-    await abrirLoteExclusivo(page);
+    await abrirLoteExclusivo(page, 1);
     await page.getByRole("button", { name: /^Dar lance/ }).first().click();
     const dialogo = page.getByRole("dialog");
     await dialogo.getByRole("button", { name: /^Confirmar lance de/ }).click();
@@ -218,7 +225,7 @@ test.describe("BIZ-001/012 — o lance é registrado no servidor", () => {
   test("SEC-004 — lance abaixo do mínimo é recusado pelo servidor mesmo forçando", async ({ page }) => {
     await criarConta(page);
     // Contorna a interface: fala com a API como um cliente hostil faria.
-    const escolhido = await abrirLoteExclusivo(page);
+    const escolhido = await abrirLoteExclusivo(page, 2);
     const resposta = await page.evaluate(async (loteId) => {
       const { lote: alvo } = await (await fetch(`/api/v1/lotes/${loteId}`)).json();
       const r = await fetch(`/api/v1/lotes/${alvo.id}/lances`, {
@@ -240,7 +247,7 @@ test.describe("BIZ-001/012 — o lance é registrado no servidor", () => {
 test.describe("BIZ-006 — cancelamento com validação no servidor", () => {
   test("o primeiro lance pode ser cancelado e o lote volta atrás", async ({ page }) => {
     await criarConta(page);
-    await abrirLoteExclusivo(page);
+    await abrirLoteExclusivo(page, 3);
     await page.getByRole("button", { name: /^Dar lance/ }).first().click();
     const dialogo = page.getByRole("dialog");
     await dialogo.getByRole("button", { name: /^Confirmar lance de/ }).click();
@@ -258,7 +265,7 @@ test.describe("BIZ-006 — cancelamento com validação no servidor", () => {
   test("IDOR — não dá para cancelar o lance de outra pessoa", async ({ page, context }) => {
     // Pessoa A dá um lance e descobre o id do lance.
     await criarConta(page);
-    const escolhido = await abrirLoteExclusivo(page);
+    const escolhido = await abrirLoteExclusivo(page, 4);
     const lance = await page.evaluate(async (loteId) => {
       const { lote: alvo } = await (await fetch(`/api/v1/lotes/${loteId}`)).json();
       const r = await fetch(`/api/v1/lotes/${alvo.id}/lances`, {
@@ -312,7 +319,7 @@ test.describe("teto e prorrogação, pela interface", () => {
   test("o teto responde sozinho quando outra pessoa cobre", async ({ page, context }) => {
     // Ana dá um lance com teto alto.
     const ana = await criarConta(page);
-    const lote = await abrirLoteExclusivo(page);
+    const lote = await abrirLoteExclusivo(page, 5);
     const alvo = await page.evaluate(async (loteId) => {
       const { lote: l } = await (await fetch(`/api/v1/lotes/${loteId}`)).json();
       const r = await fetch(`/api/v1/lotes/${l.id}/lances`, {
@@ -419,5 +426,102 @@ test.describe("recuperação de senha", () => {
     // Sem isto o token ficaria no histórico e vazaria no Referer.
     await expect.poll(() => page.url()).not.toContain("token");
     expect(page.url()).toContain("/redefinir");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Pendências de docs/api.md, pela interface e pela rede.
+// ---------------------------------------------------------------------------
+
+test.describe("verificação de e-mail", () => {
+  test("a conta nova pede confirmação, e o aviso não bloqueia nada", async ({ page }) => {
+    await criarConta(page);
+    await expect(page.getByText(/Falta confirmar seu e-mail/i)).toBeVisible();
+    // A conta funciona sem confirmar: dá para navegar e o botão de lance existe.
+    await expect(primeiroCardAberto(page).getByRole("button", { name: "Dar lance" })).toBeVisible();
+  });
+
+  test("o reenvio responde alguma coisa — nunca falha em silêncio", async ({ page }) => {
+    await criarConta(page);
+    await page.getByRole("button", { name: "Reenviar link" }).click();
+    // Com canal configurado diz para onde foi; sem canal, diz que não está
+    // configurado. O defeito seria o botão não dizer nada.
+    await expect(page.getByText(/Link enviado para|não está configurad/i)).toBeVisible();
+  });
+
+  test("link de confirmação sem token não finge que funcionou", async ({ page }) => {
+    await page.goto("/verificar");
+    await expect(page.getByRole("heading", { name: "Link inválido." })).toBeVisible();
+  });
+
+  test("token inválido é recusado com explicação, e sai da barra de endereços", async ({ page }) => {
+    await page.goto("/verificar?token=nao-existe");
+    await expect(page.getByText(/inválido, expirado ou já usado/i)).toBeVisible();
+    // O token não pode ficar no histórico nem vazar no Referer do próximo clique.
+    expect(new URL(page.url()).search).toBe("");
+  });
+});
+
+test.describe("histórico público de lances", () => {
+  test("o lance aparece no histórico do lote sem identificar quem o deu", async ({ page }) => {
+    const conta = await criarConta(page);
+    const lote = await abrirLoteExclusivo(page, 6);
+
+    await page.getByRole("button", { name: /^Dar lance/ }).first().click();
+    const dialogo = page.getByRole("dialog");
+    await dialogo.getByRole("button", { name: /^Confirmar lance de/ }).click();
+    await dialogo.getByLabel(/Li o/).check();
+    await dialogo.getByRole("button", { name: /^Confirmar lance/ }).click();
+    await expect(dialogo.getByText(/Lance registrado/i)).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    await page.goto(`/lote/${lote.id}`);
+    await page.getByRole("button", { name: "Histórico de lances" }).click();
+
+    await expect(page.getByText("Participante 1")).toBeVisible();
+    // Nem o nome nem o e-mail de quem deu o lance aparecem em lugar nenhum.
+    await expect(page.locator("main")).not.toContainText(conta.email);
+  });
+
+  test("é público: dá para ver o histórico sem conta nenhuma", async ({ page }) => {
+    await page.goto("/lote/lot-mooca-studio");
+    await page.getByRole("button", { name: "Histórico de lances" }).click();
+    // Sem sessão, a aba carrega e explica a regra do apelido — em vez de pedir
+    // login ou devolver erro.
+    await expect(page.getByText(/o apelido vale só dentro deste lote/i)).toBeVisible();
+    await expect(page.getByText(/Carregando o histórico/i)).toHaveCount(0);
+  });
+});
+
+test.describe("paginação de /lotes", () => {
+  test("o cliente monta o catálogo por páginas e não perde nem repete lote", async ({ page }) => {
+    await page.goto("/leiloes");
+    await expect(page.locator("article").first()).toBeVisible();
+
+    const r = await page.evaluate(async () => {
+      const inteiro = await (await fetch("/api/v1/lotes")).json();
+      const paginado = [];
+      let cursor = null;
+      do {
+        const q = new URLSearchParams({ limite: "3" });
+        if (cursor) q.set("cursor", cursor);
+        const p = await (await fetch(`/api/v1/lotes?${q}`)).json();
+        paginado.push(...p.lotes.map((l) => l.id));
+        cursor = p.proximo;
+      } while (cursor);
+      return { inteiro: inteiro.lotes.map((l) => l.id), paginado, total: inteiro.total };
+    });
+
+    expect(r.paginado).toHaveLength(r.inteiro.length);
+    expect(new Set(r.paginado).size).toBe(r.paginado.length);
+    expect([...r.paginado].sort()).toEqual([...r.inteiro].sort());
+    expect(r.total).toBe(r.inteiro.length);
+  });
+
+  test("limite fora de forma é recusado com 400", async ({ page }) => {
+    await page.goto("/leiloes");
+    const status = await page.evaluate(() =>
+      fetch("/api/v1/lotes?limite=abc").then((r) => r.status));
+    expect(status).toBe(400);
   });
 });

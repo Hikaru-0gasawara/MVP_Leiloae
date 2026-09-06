@@ -4,6 +4,7 @@ import { formatBRL as fmtBRL, isEnded } from "./domain/auction.js";
 import { Icon, Badge, Countdown } from "./components.jsx";
 import { useNow } from "./lib/clock.js";
 import { useDismissable } from "./ui/Dialog.jsx";
+import { useCarrosseis } from "./lib/motion.js";
 
 // ---------- Shared: Logo wordmark ----------
 export function Wordmark({ size = 24, sub }) {
@@ -383,6 +384,7 @@ export function NavB({ route, onNavigate, onCategoryChange, onTour, onOpenNotifi
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--hot)", animation: "leiloe-pulse 1.2s infinite", marginRight: 2 }} />
             Encerrando
           </Badge>
+          <PausaDosCarrosseis />
           <MarqueeTrack items={ticker} onClick={(lot) => {
             onCategoryChange(lot.category === "carro" ? "carro" : "imovel");
             onNavigate("lot", lot.id);
@@ -393,24 +395,65 @@ export function NavB({ route, onNavigate, onCategoryChange, onTour, onOpenNotifi
   );
 }
 
+/**
+ * Botão de pausa dos carrosséis — o ticker e a rotação de fotos.
+ *
+ * Existe porque a faixa passou a rolar mesmo com "reduzir movimento" ligado
+ * (ver `src/lib/motion.js`): conteúdo em movimento precisa de um jeito de
+ * parar que não seja passar o mouse, senão quem navega por teclado fica sem
+ * saída (WCAG 2.2.2).
+ */
+function PausaDosCarrosseis() {
+  const { pausado, alternar } = useCarrosseis();
+  return (
+    <button
+      type="button"
+      onClick={() => alternar()}
+      aria-pressed={pausado}
+      aria-label={pausado ? "Retomar as animações automáticas" : "Pausar as animações automáticas"}
+      title={pausado ? "Retomar as animações" : "Pausar as animações"}
+      style={{
+        flexShrink: 0, width: 24, height: 24, borderRadius: "50%",
+        background: "transparent", border: "1px solid var(--border-2)",
+        color: "var(--text-dim)", display: "grid", placeItems: "center",
+        cursor: "pointer", fontSize: 9, lineHeight: 1, padding: 0,
+      }}
+    >
+      <span aria-hidden="true">{pausado ? "▶" : "‖"}</span>
+    </button>
+  );
+}
+
 // Continuous marquee — duplicates the items so the loop is seamless.
-// Pauses on hover; respects prefers-reduced-motion.
+//
+// A animação vive em `.ticker-marquee` (src/index.css) e não mais no estilo
+// inline: a regra global de `prefers-reduced-motion` usa `!important`, que
+// vence estilo inline, e era ela que deixava a faixa parada. O ticker é
+// conteúdo ao vivo, então continua rolando — e pausa no hover, no foco de
+// teclado e pelo botão da faixa.
 function MarqueeTrack({ items, onClick }) {
-  const [paused, setPaused] = useState(false);
+  const [hover, setHover] = useState(false);
+  const [foco, setFoco] = useState(false);
+  const { pausado } = useCarrosseis();
   const duplicated = [...items, ...items];
   const speed = Math.max(48, items.length * 7); // ~7s per item
+  const parado = pausado || hover || foco;
   return (
     <div
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      onFocus={() => setFoco(true)}
+      onBlur={() => setFoco(false)}
       style={{ flex: 1, overflow: "hidden", position: "relative", maskImage: "linear-gradient(to right, transparent, black 4%, black 96%, transparent)" }}
     >
-      <div style={{
-        display: "inline-flex", gap: 28, whiteSpace: "nowrap",
-        animation: `leiloe-marquee ${speed}s linear infinite`,
-        animationPlayState: paused ? "paused" : "running",
-        paddingRight: 28,
-      }}>
+      <div
+        className="ticker-marquee"
+        data-pausado={parado ? "true" : "false"}
+        style={{
+          display: "inline-flex", gap: 28, whiteSpace: "nowrap",
+          ["--ticker-dur"]: `${speed}s`,
+          paddingRight: 28,
+        }}>
         {duplicated.map((lot, i) => (
           <button key={`${lot.id}-${i}`} onClick={() => onClick(lot)} style={{
             background: "transparent", border: "none", color: "var(--text-dim)",

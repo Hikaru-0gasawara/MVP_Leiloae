@@ -31,6 +31,10 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"], baseURL: `http://localhost:${PORTA_SERVIDOR}`, trace: "on-first-retry", ...lancamento },
     },
   ],
+  // Nenhum comando aqui carrega prefixo `VAR=valor`: essa sintaxe é do shell
+  // POSIX, e no `cmd.exe` vira "comando não encontrado" — a suíte inteira não
+  // subia na máquina de quem desenvolve no Windows. O ambiente vai no campo
+  // `env`, que o Playwright injeta no processo filho nos dois sistemas.
   webServer: [
     {
       command: `npm run build && npx vite preview --port ${PORTA_DEMO} --strictPort`,
@@ -41,14 +45,21 @@ export default defineConfig({
     {
       // Banco descartável por execução: os testes nunca dependem do que ficou
       // de uma rodada anterior, e nenhum deles suja o banco de desenvolvimento.
+      // Os arquivos `-wal` e `-shm` vão junto — apagar só o `.db` deixava o
+      // diário para trás, e com ele parte do estado que era para ter sumido.
       command:
-        `VITE_API_URL=/ npm run build:servidor && ` +
-        `LEILOAE_DB=./dados/e2e.db node -e "require('fs').rmSync('./dados/e2e.db',{force:true})" && ` +
-        `LEILOAE_DB=./dados/e2e.db PORT=${PORTA_SERVIDOR} ` +
+        `npm run build:servidor && ` +
+        `node -e "for (const s of ['','-wal','-shm']) require('fs').rmSync(process.env.LEILOAE_DB + s, {force: true})" && ` +
+        `node server/index.js`,
+      port: PORTA_SERVIDOR,
+      env: {
+        VITE_API_URL: "/",
+        LEILOAE_DB: "./dados/e2e.db",
+        PORT: String(PORTA_SERVIDOR),
         // Identidade por X-Forwarded-For: cada teste é um cliente distinto
         // para a limitação de taxa. Ver o cabeçalho de e2e/servidor.spec.js.
-        `LEILOAE_ATRAS_DE_PROXY=1 node server/index.js`,
-      port: PORTA_SERVIDOR,
+        LEILOAE_ATRAS_DE_PROXY: "1",
+      },
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
     },

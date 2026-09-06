@@ -29,6 +29,7 @@ const SIMPLE = {
   messages: "/conta/mensagens",
   entrar: "/entrar",
   redefinir: "/redefinir",
+  verificar: "/verificar",
   payments: "/conta/pagamentos",
   settings: "/conta/configuracoes",
 };
@@ -74,6 +75,7 @@ export function routeTitle(route, lot) {
     case "messages": return `Mensagens · ${base}`;
     case "entrar": return `Entrar · ${base}`;
     case "redefinir": return `Redefinir senha · ${base}`;
+    case "verificar": return `Confirmar e-mail · ${base}`;
     case "payments": return `Pagamentos · ${base}`;
     case "settings": return `Configurações · ${base}`;
     case "page": return `${base}`;

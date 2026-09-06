@@ -266,3 +266,92 @@ test.describe("FRONT-003/004 — orçamento de imagens e timers", () => {
     expect(await page.evaluate(() => window.__vivos.size)).toBe(0);
   });
 });
+
+test.describe("FRONT-015 — o carrossel roda mesmo com \"reduzir movimento\"", () => {
+  // O defeito relatado: num sistema com "reduzir movimento" ligado, o ticker
+  // "Encerrando" ficava parado e cada card mostrava só a primeira das quatro
+  // fotos. A regra global de reduced-motion zera `animation-duration` com
+  // `!important`, e `!important` de folha de estilo vence estilo inline — a
+  // duração que o React punha no elemento nunca chegava a valer.
+  //
+  // A faixa ao vivo é conteúdo, não transição decorativa, então continua
+  // rolando; o que a acessibilidade pede dela é um jeito de parar, e é o que
+  // os dois últimos testes cobrem.
+  test.use({ reducedMotion: "reduce" });
+
+  // Aqui as fotos precisam CARREGAR: o `abort` do topo do arquivo dispara o
+  // `onError` da imagem, o card deixa de desenhar `<img>` e não sobra nada
+  // para observar trocando. Uma rota registrada depois tem prioridade sobre a
+  // anterior, então esta vale só dentro deste bloco.
+  const PIXEL = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  test.beforeEach(async ({ page }) => {
+    await page.route(/^https:\/\/images\.unsplash\.com/, (route) =>
+      route.fulfill({ status: 200, contentType: "image/png", body: PIXEL }));
+  });
+
+  const trilho = (page) => page.locator(".ticker-marquee");
+
+  test("a faixa continua rolando", async ({ page }) => {
+    await page.goto("/leiloes");
+    const t = trilho(page);
+    await expect(t).toBeVisible();
+    const antes = await t.evaluate((el) => getComputedStyle(el).transform);
+    await page.waitForTimeout(1200);
+    const depois = await t.evaluate((el) => getComputedStyle(el).transform);
+    expect(depois).not.toBe(antes);
+    expect(depois).not.toBe("none");
+  });
+
+  test("as fotos do card continuam trocando", async ({ page }) => {
+    await page.goto("/leiloes");
+    const primeiraFoto = page.locator("article img").first();
+    await expect(primeiraFoto).toBeVisible();
+    // O `alt` descreve o enquadramento ("sala", "cozinha"...), então muda junto
+    // com a foto e não depende do endereço da imagem.
+    const antes = await primeiraFoto.getAttribute("alt");
+    await expect
+      .poll(() => page.locator("article img").first().getAttribute("alt"), { timeout: 10_000 })
+      .not.toBe(antes);
+  });
+
+  test("o botão da faixa pausa e retoma", async ({ page }) => {
+    await page.goto("/leiloes");
+    const pausar = page.getByRole("button", { name: "Pausar as animações automáticas" });
+    await pausar.click();
+
+    const t = trilho(page);
+    await expect(t).toHaveAttribute("data-pausado", "true");
+    const parado = await t.evaluate((el) => getComputedStyle(el).transform);
+    await page.waitForTimeout(1000);
+    expect(await t.evaluate((el) => getComputedStyle(el).transform)).toBe(parado);
+
+    await page.getByRole("button", { name: "Retomar as animações automáticas" }).click();
+    await expect(t).toHaveAttribute("data-pausado", "false");
+    await page.waitForTimeout(1000);
+    expect(await t.evaluate((el) => getComputedStyle(el).transform)).not.toBe(parado);
+  });
+
+  test("a pausa sobrevive à recarga", async ({ page }) => {
+    await page.goto("/leiloes");
+    await page.getByRole("button", { name: "Pausar as animações automáticas" }).click();
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Retomar as animações automáticas" })).toBeVisible();
+    await expect(trilho(page)).toHaveAttribute("data-pausado", "true");
+  });
+
+  test("passar o mouse pausa a faixa", async ({ page }) => {
+    await page.goto("/leiloes");
+    const t = trilho(page);
+    // `force`: o trilho está em movimento e a checagem de estabilidade do
+    // Playwright nunca o considera parado — que é justamente o que este teste
+    // quer provar.
+    await t.hover({ force: true });
+    await expect(t).toHaveAttribute("data-pausado", "true");
+    const parado = await t.evaluate((el) => getComputedStyle(el).transform);
+    await page.waitForTimeout(800);
+    expect(await t.evaluate((el) => getComputedStyle(el).transform)).toBe(parado);
+  });
+});

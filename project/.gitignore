@@ -16,3 +16,6 @@ coverage
 public/fotos
 dados
 dist-servidor
+
+# Cópias de segurança do banco (scripts/backup.mjs)
+backups

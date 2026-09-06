@@ -58,8 +58,16 @@ export function criarUsuario(db, { email, senha, nome }) {
   db.prepare(
     "INSERT INTO usuarios (id, email, nome, senha_hash, salt, criado_em) VALUES (?,?,?,?,?,?)"
   ).run(id, normalizado, String(nome).trim(), hash, salt, Date.now());
-  return { usuario: { id, email: normalizado, nome: String(nome).trim() } };
+  return { usuario: { id, email: normalizado, nome: String(nome).trim(), emailVerificado: false } };
 }
+
+/** Forma pública do usuário. Hash, sal e id de sessão nunca saem daqui. */
+const usuarioPublico = (linha) => ({
+  id: linha.id,
+  email: linha.email,
+  nome: linha.nome,
+  emailVerificado: linha.email_verificado_em != null,
+});
 
 /** Sempre gasta o mesmo trabalho de scrypt, exista o usuário ou não. */
 const SAL_FANTASMA = "0".repeat(32);
@@ -72,7 +80,7 @@ export function autenticar(db, { email, senha }) {
     ? senhaConfere(String(senha || ""), linha.salt, linha.senha_hash)
     : (senhaConfere(String(senha || ""), SAL_FANTASMA, HASH_FANTASMA), false);
   if (!ok) return { erro: "credenciais-invalidas", mensagem: "E-mail ou senha incorretos." };
-  return { usuario: { id: linha.id, email: linha.email, nome: linha.nome } };
+  return { usuario: usuarioPublico(linha) };
 }
 
 export function criarSessao(db, usuarioId, agora = Date.now()) {
@@ -86,7 +94,7 @@ export function criarSessao(db, usuarioId, agora = Date.now()) {
 export function usuarioDaSessao(db, token, agora = Date.now()) {
   if (!token) return null;
   const linha = db.prepare(
-    `SELECT u.id, u.email, u.nome, s.expira_em
+    `SELECT u.id, u.email, u.nome, u.email_verificado_em, s.expira_em
        FROM sessoes s JOIN usuarios u ON u.id = s.usuario_id
       WHERE s.token_hash = ?`
   ).get(hashToken(token));
@@ -95,7 +103,7 @@ export function usuarioDaSessao(db, token, agora = Date.now()) {
     db.prepare("DELETE FROM sessoes WHERE token_hash = ?").run(hashToken(token));
     return null;
   }
-  return { id: linha.id, email: linha.email, nome: linha.nome };
+  return usuarioPublico(linha);
 }
 
 export function encerrarSessao(db, token) {
@@ -209,5 +217,83 @@ export function redefinirSenha(db, { token, senha }, agora = Date.now()) {
 /** Remove pedidos vencidos ou já usados. */
 export function limparRecuperacoes(db, agora = Date.now()) {
   return db.prepare("DELETE FROM recuperacoes WHERE expira_em <= ? OR usado_em IS NOT NULL")
+    .run(agora).changes;
+}
+
+// ---------------------------------------------------------------------------
+// Verificação de e-mail
+// ---------------------------------------------------------------------------
+//
+// A conta funcionava antes de o endereço ser confirmado, e um e-mail digitado
+// errado só aparecia quando a pessoa tentava recuperar a senha — no pior
+// momento possível, o de já estar trancada para fora. Agora o cadastro dispara
+// um link de confirmação.
+//
+// Duas decisões deliberadas:
+//
+//  · A conta continua funcionando sem verificação. Travar o lance atrás de um
+//    e-mail que pode nunca chegar (provedor bloqueando, caixa cheia) trocaria
+//    um problema raro por um que impede de usar o produto. O que muda é que a
+//    interface diz, de forma visível, que o endereço ainda não foi confirmado.
+//  · O token segue o desenho da recuperação: hash no banco, uso único,
+//    validade curta. Pedir de novo invalida o link anterior.
+
+export const VALIDADE_VERIFICACAO_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Abre um pedido de verificação e devolve o token em claro, apenas para ser
+ * entregue pelo canal de e-mail. Devolve null se o endereço já está confirmado.
+ *
+ * @returns {{token: string, usuario: {id: string, email: string, nome: string}} | null}
+ */
+export function abrirVerificacao(db, usuarioId, agora = Date.now()) {
+  const usuario = db.prepare(
+    "SELECT id, email, nome, email_verificado_em FROM usuarios WHERE id = ?"
+  ).get(usuarioId);
+  if (!usuario || usuario.email_verificado_em != null) return null;
+
+  db.prepare("DELETE FROM verificacoes WHERE usuario_id = ? AND usado_em IS NULL").run(usuario.id);
+  const token = randomBytes(32).toString("base64url");
+  db.prepare(
+    "INSERT INTO verificacoes (token_hash, usuario_id, criado_em, expira_em, usado_em) VALUES (?,?,?,?,NULL)"
+  ).run(hashToken(token), usuario.id, agora, agora + VALIDADE_VERIFICACAO_MS);
+
+  return { token, usuario: { id: usuario.id, email: usuario.email, nome: usuario.nome } };
+}
+
+/**
+ * Consome o token e marca o endereço como confirmado.
+ *
+ * Diferente da redefinição de senha, NÃO derruba as sessões: aqui nada que dê
+ * poder a um invasor mudou — confirmar um endereço não troca credencial.
+ *
+ * @returns {{ok: true, usuario: {id: string, email: string, nome: string, emailVerificado: true}}
+ *          | {erro: string, mensagem: string}}
+ */
+export function confirmarEmail(db, token, agora = Date.now()) {
+  if (!token) return { erro: "token-invalido", mensagem: "Link de confirmação inválido ou já usado." };
+
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const linha = db.prepare("SELECT * FROM verificacoes WHERE token_hash = ?").get(hashToken(token));
+    const valido = linha && linha.usado_em == null && linha.expira_em > agora;
+    if (!valido) {
+      db.exec("ROLLBACK");
+      return { erro: "token-invalido", mensagem: "Link de confirmação inválido, expirado ou já usado." };
+    }
+    db.prepare("UPDATE usuarios SET email_verificado_em = ? WHERE id = ?").run(agora, linha.usuario_id);
+    db.prepare("UPDATE verificacoes SET usado_em = ? WHERE token_hash = ?").run(agora, linha.token_hash);
+    const usuario = db.prepare("SELECT id, email, nome FROM usuarios WHERE id = ?").get(linha.usuario_id);
+    db.exec("COMMIT");
+    return { ok: true, usuario: { ...usuario, emailVerificado: true } };
+  } catch (e) {
+    try { db.exec("ROLLBACK"); } catch { /* já desfeita */ }
+    throw e;
+  }
+}
+
+/** Remove pedidos de verificação vencidos ou já usados. */
+export function limparVerificacoes(db, agora = Date.now()) {
+  return db.prepare("DELETE FROM verificacoes WHERE expira_em <= ? OR usado_em IS NOT NULL")
     .run(agora).changes;
 }

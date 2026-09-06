@@ -8,13 +8,19 @@ import {
   criarUsuario, autenticar, criarSessao, usuarioDaSessao, encerrarSessao,
   lerCookie, cookieDeSessao, cookieDeSaida, COOKIE,
   abrirRecuperacao, redefinirSenha, VALIDADE_RECUPERACAO_MS,
+  abrirVerificacao, confirmarEmail, VALIDADE_VERIFICACAO_MS,
 } from "./auth.js";
-import { enviarEmail, mensagemDeRecuperacao, TEM_CANAL_EMAIL } from "./email.js";
-import { listarLotes, buscarLote } from "./db.js";
+import {
+  enviarEmail, mensagemDeRecuperacao, mensagemDeVerificacao, TEM_CANAL_EMAIL,
+} from "./email.js";
+import { listarLotes, buscarLote, historicoDoLote } from "./db.js";
 import { darLance, cancelarLance, meusLances, listarSalvos, alternarSalvo } from "./bids.js";
 import { criarLimitador, identificar } from "./ratelimit.js";
 
-export const VERSAO_API = "1.0.0";
+// 1.2.0: verificação de e-mail, paginação opcional em /lotes e histórico
+// público de lances. Tudo acréscimo — nenhum cliente da 1.1 quebra —, então
+// sobe a versão menor, como manda docs/api.md.
+export const VERSAO_API = "1.2.0";
 const PREFIXO = "/api/v1";
 
 const LIMITE_CORPO = 16 * 1024; // nenhum pedido legítimo desta API é maior
@@ -61,6 +67,9 @@ const STATUS = {
  *  @type {Array<[RegExp, "autenticacao"|"escrita"|"leitura"]>} */
 const PERFIL_DA_ROTA = [
   [/^\/auth\/(entrar|registrar|recuperar|redefinir)$/, "autenticacao"],
+  // Reenviar confirmação dispara e-mail: mesmo perfil apertado do resto da
+  // autenticação, senão vira um jeito de usar o servidor para mandar mensagem.
+  [/^\/auth\/verificar(\/enviar)?$/, "autenticacao"],
   [/^\/lotes\/[\w-]+\/lances$/, "escrita"],
   [/^\/lances\/[\w-]+\/cancelar$/, "escrita"],
   [/^\/salvos\/[\w-]+$/, "escrita"],
@@ -87,6 +96,28 @@ export async function lerCorpo(req) {
   }
 }
 
+const LIMITE_MAXIMO_PAGINA = 200;
+
+/**
+ * Lê `limite` da query. Ausente = catálogo inteiro (comportamento da 1.1).
+ * Valor fora de forma é erro explícito, não "aproximado para o mais próximo":
+ * um cliente que pede `limite=abc` está com defeito, e responder 400 é o que
+ * mostra isso a quem o escreveu.
+ *
+ * @param {URLSearchParams} [params]
+ * @returns {number|null|ErroHttp}
+ */
+function limiteDaQuery(params) {
+  const bruto = params?.get("limite");
+  if (bruto == null || bruto === "") return null;
+  const n = Number(bruto);
+  if (!Number.isInteger(n) || n < 1 || n > LIMITE_MAXIMO_PAGINA) {
+    return new ErroHttp(400, "dados-invalidos",
+      `O parâmetro "limite" precisa ser um inteiro entre 1 e ${LIMITE_MAXIMO_PAGINA}.`);
+  }
+  return n;
+}
+
 /**
  * @typedef {object} ContextoDeRotas
  * @property {any} db conexão node:sqlite
@@ -100,7 +131,8 @@ export async function lerCorpo(req) {
 /**
  * Constrói o roteador.
  * @param {ContextoDeRotas} ctx
- * @returns {(req: import("node:http").IncomingMessage, caminho: string) =>
+ * @returns {(req: import("node:http").IncomingMessage, caminho: string,
+ *             params?: URLSearchParams) =>
  *   Promise<{status?: number, corpo: any, cookie?: string, cabecalhos?: Record<string,string>}|null>}
  */
 export function criarRotas(ctx) {
@@ -116,6 +148,25 @@ export function criarRotas(ctx) {
 
   const publicarLote = (loteId) => ctx.aoMudarLote?.(buscarLote(db, loteId));
 
+  /**
+   * Dispara o link de confirmação de endereço. Falha de entrega vira log, não
+   * erro para quem chamou: o cadastro já está feito e a conta já funciona.
+   */
+  const enviarVerificacao = async (usuarioId) => {
+    if (!TEM_CANAL_EMAIL) return false;
+    const pedido = abrirVerificacao(db, usuarioId);
+    if (!pedido) return false;
+    const link = `${ctx.urlBase || ""}/verificar?token=${encodeURIComponent(pedido.token)}`;
+    const envio = await enviarEmail(mensagemDeVerificacao({
+      nome: pedido.usuario.nome,
+      email: pedido.usuario.email,
+      link,
+      validadeHoras: Math.round(VALIDADE_VERIFICACAO_MS / 3600000),
+    }));
+    if (!envio.ok) console.error("[Leiloaê] falha ao enviar verificação:", envio.erro);
+    return envio.ok;
+  };
+
   /** @type {Array<[string, RegExp, Function]>} */
   const rotas = [
     ["GET", /^\/saude$/, () => ({
@@ -128,7 +179,38 @@ export function criarRotas(ctx) {
       const r = criarUsuario(db, corpo);
       if ("erro" in r) return { status: STATUS[r.erro] || 400, corpo: r };
       const token = criarSessao(db, r.usuario.id);
+      // O envio não segura o cadastro: canal fora do ar não pode impedir
+      // alguém de criar conta, e a conta funciona sem confirmação. Quem quiser
+      // o link de novo tem /auth/verificar/enviar.
+      await enviarVerificacao(r.usuario.id);
       return { status: 201, corpo: { usuario: r.usuario }, cookie: cookieDeSessao(token, ctx) };
+    }],
+
+    // Confirma o endereço. Público de propósito: o link do e-mail costuma ser
+    // aberto noutro navegador, onde não existe sessão nenhuma.
+    ["POST", /^\/auth\/verificar$/, async (req) => {
+      const { token } = await lerCorpo(req);
+      const r = confirmarEmail(db, token);
+      if ("erro" in r) return { status: STATUS[r.erro] || 400, corpo: r };
+      return { corpo: { ok: true, usuario: r.usuario } };
+    }],
+
+    // Reenvio. Exige sessão: sem isso viraria um jeito de mandar e-mail para
+    // qualquer endereço a partir do nosso domínio.
+    ["POST", /^\/auth\/verificar\/enviar$/, async (req) => {
+      const usuario = exigirSessao(req);
+      if (usuario.emailVerificado) return { corpo: { ok: true, jaVerificado: true } };
+      if (!TEM_CANAL_EMAIL) {
+        return {
+          status: 503,
+          corpo: {
+            erro: "canal-indisponivel",
+            mensagem: "O envio de e-mail não está configurado neste ambiente.",
+          },
+        };
+      }
+      await enviarVerificacao(usuario.id);
+      return { corpo: { ok: true, jaVerificado: false } };
     }],
 
     ["POST", /^\/auth\/entrar$/, async (req) => {
@@ -194,14 +276,29 @@ export function criarRotas(ctx) {
     }],
 
     // ---- catálogo (público) -----------------------------------------------
-    ["GET", /^\/lotes$/, () => ({
-      corpo: { lotes: listarLotes(db), agora: Date.now() },
-    })],
+    //
+    // Sem `limite`, responde o catálogo inteiro, exatamente como na 1.1 — os
+    // clientes existentes não sabem que a paginação passou a existir.
+    ["GET", /^\/lotes$/, (req, _p, params) => {
+      const limite = limiteDaQuery(params);
+      if (limite instanceof ErroHttp) throw limite;
+      const { lotes, proximo, total } = listarLotes(db, { limite: limite ?? undefined, cursor: params?.get("cursor") });
+      return { corpo: { lotes, proximo, total, agora: Date.now() } };
+    }],
 
     ["GET", /^\/lotes\/([\w-]+)$/, (req, [id]) => {
       const lote = buscarLote(db, id);
       if (!lote) return { status: 404, corpo: { erro: "lote-inexistente", mensagem: "Lote não encontrado." } };
       return { corpo: { lote, agora: Date.now() } };
+    }],
+
+    // Histórico público de lances. Sem sessão: é a mesma informação que o
+    // pregão anuncia em voz alta na sala. Quem deu cada lance vira
+    // "Participante N" dentro do lote — ver `historicoDoLote` em db.js.
+    ["GET", /^\/lotes\/([\w-]+)\/lances$/, (req, [id]) => {
+      const lote = buscarLote(db, id);
+      if (!lote) return { status: 404, corpo: { erro: "lote-inexistente", mensagem: "Lote não encontrado." } };
+      return { corpo: { lances: historicoDoLote(db, id), agora: Date.now() } };
     }],
 
     // ---- lances (exige sessão) --------------------------------------------
@@ -242,7 +339,7 @@ export function criarRotas(ctx) {
   ];
 
   /** Resolve um pedido. Devolve null quando a URL não é da API. */
-  return async function despachar(req, caminho) {
+  return async function despachar(req, caminho, params) {
     if (!caminho.startsWith(PREFIXO)) return null;
     const relativo = caminho.slice(PREFIXO.length) || "/";
 
@@ -268,7 +365,7 @@ export function criarRotas(ctx) {
       if (!m) continue;
       achouCaminho = true;
       if (req.method !== metodo) continue;
-      return await manipulador(req, m.slice(1));
+      return await manipulador(req, m.slice(1), params);
     }
     return {
       status: achouCaminho ? 405 : 404,

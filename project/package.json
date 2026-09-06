@@ -13,7 +13,8 @@
     "lint": "eslint src e2e scripts --max-warnings=0",
     "check": "npm run lint && npm run typecheck && npm test && npm run build",
     "fotos:baixar": "node scripts/baixar-fotos.mjs",
-    "build:servidor": "vite build --outDir dist-servidor",
+    "backup": "node scripts/backup.mjs",
+    "build:servidor": "node scripts/build-servidor.mjs",
     "servidor": "node server/index.js",
     "dev:servidor": "npm run build:servidor && node server/index.js",
     "typecheck": "tsc -p tsconfig.json"

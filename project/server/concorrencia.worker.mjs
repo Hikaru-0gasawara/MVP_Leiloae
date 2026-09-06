@@ -24,3 +24,9 @@ for (let i = 0; i < tentativas; i++) {
 }
 
 parentPort.postMessage({ aceitos, recusados });
+
+// Fecha a conexão de propósito, e não por educação: enquanto ela existir, o
+// arquivo de banco continua aberto, e o teste que apaga a pasta temporária logo
+// depois esbarra nele (EPERM no Windows).
+db.close();
+parentPort.close();

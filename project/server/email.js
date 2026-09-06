@@ -17,6 +17,8 @@
 // o suficiente para desenvolver e testar o fluxo inteiro.
 
 export const EMAIL_ENDPOINT = process.env.LEILOAE_EMAIL_ENDPOINT || "";
+/** Vitest define as duas; o servidor de verdade, nenhuma. */
+const SILENCIOSO = Boolean(process.env.VITEST) || process.env.NODE_ENV === "test";
 export const TEM_CANAL_EMAIL = Boolean(EMAIL_ENDPOINT) || process.env.NODE_ENV !== "production";
 
 /**
@@ -41,6 +43,13 @@ export async function enviarEmail(mensagem) {
   if (process.env.NODE_ENV !== "production") {
     // O corpo vai para o log de desenvolvimento de propósito: é o único jeito
     // de exercitar o fluxo sem provedor. Em produção este ramo não roda.
+    //
+    // Sob o executor de teste, não. Desde que o cadastro passou a disparar a
+    // confirmação de endereço, TODO teste que cria conta despejava um e-mail
+    // inteiro na saída, e `npm run check` virou centenas de linhas em que um
+    // erro de verdade passa despercebido. O canal continua existindo — o que
+    // some é o barulho.
+    if (SILENCIOSO) return { ok: true, canal: "log" };
     console.log(
       `\n[Leiloaê · e-mail de desenvolvimento]\n  para: ${mensagem.para}\n` +
       `  assunto: ${mensagem.assunto}\n  ${mensagem.texto.replace(/\n/g, "\n  ")}\n`
@@ -62,5 +71,21 @@ export function mensagemDeRecuperacao({ nome, email, link, validadeMinutos }) {
       `${link}\n\n` +
       `O link vale por ${validadeMinutos} minutos e só pode ser usado uma vez.\n` +
       `Se não foi você, não precisa fazer nada — sua senha continua a mesma.\n`,
+  };
+}
+
+/** Corpo do e-mail de confirmação de endereço. */
+export function mensagemDeVerificacao({ nome, email, link, validadeHoras }) {
+  return {
+    para: email,
+    assunto: "Confirme seu e-mail no Leiloaê",
+    texto:
+      `Oi, ${nome}.\n\n` +
+      `Falta confirmar este endereço para a gente ter certeza de que consegue ` +
+      `falar com você — inclusive se um dia precisar recuperar a senha.\n\n` +
+      `${link}\n\n` +
+      `O link vale por ${validadeHoras} horas e só pode ser usado uma vez.\n` +
+      `Sua conta já funciona normalmente enquanto isso.\n` +
+      `Se não foi você quem se cadastrou, ignore esta mensagem.\n`,
   };
 }

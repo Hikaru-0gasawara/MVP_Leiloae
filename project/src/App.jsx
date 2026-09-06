@@ -23,6 +23,7 @@ import { DemoBanner } from "./ui/DemoBanner.jsx";
 import { CarregandoCatalogo, FalhaAoCarregar } from "./ui/Estados.jsx";
 import { TelaDeEntrada } from "./ui/TelaDeEntrada.jsx";
 import { TelaDeRedefinicao } from "./ui/TelaDeRedefinicao.jsx";
+import { TelaDeVerificacao, AvisoDeEmailNaoVerificado } from "./ui/TelaDeVerificacao.jsx";
 
 export default function App() {
   const [route, setRoute] = useState(() => pathToRoute(window.location.pathname));
@@ -169,6 +170,11 @@ export default function App() {
     if (route.name === "redefinir") {
       return <TelaDeRedefinicao acoes={acoes} aoConcluir={() => navigate("entrar")} aoVoltar={() => navigate("entrar")} />;
     }
+    // Confirmar e-mail também não depende do catálogo, e pelo mesmo motivo: o
+    // token do link precisa sair da URL na primeira renderização.
+    if (route.name === "verificar") {
+      return <TelaDeVerificacao acoes={acoes} aoConcluir={() => navigate("listing")} aoVoltar={() => navigate("listing")} />;
+    }
     if (route.name === "entrar") {
       return loggedIn
         ? <NotFound onNavigate={navigate} />
@@ -187,7 +193,7 @@ export default function App() {
         return <ListingScreen onOpenLot={openLot} category={category} onCategoryChange={setCategory} onBid={openBid} onSave={saveLot} onOpenCompare={openCompare} lots={lots} />;
       case "lot":
         return currentLot
-          ? <LotDetailScreen lot={currentLot} onBack={() => navigate("listing")} onBid={openBid} onSave={saveLot} />
+          ? <LotDetailScreen lot={currentLot} onBack={() => navigate("listing")} onBid={openBid} onSave={saveLot} acoes={acoes} />
           : <NotFound onNavigate={navigate} />;
       case "win":
         return currentLot
@@ -219,6 +225,7 @@ export default function App() {
   return (
     <>
       {IS_DEMO && <DemoBanner />}
+      <AvisoDeEmailNaoVerificado usuario={sessao.usuario} acoes={acoes} />
       <div style={{ minHeight: "100vh" }}>
         <a href="#conteudo" className="skip-link">Pular para o conteúdo</a>
         <NavB

@@ -38,7 +38,31 @@ function useCatalogoLocal() {
       dispatch({ type: "cancel-bid", bidId: lanceId, now: Date.now() });
       return { ok: true };
     },
-  }), []);
+    // Sem servidor não existe disputa: o "histórico" é o que a própria pessoa
+    // fez neste navegador. A tela diz isso com todas as letras, em vez de
+    // inventar adversários — seria a mesma desonestidade do formulário de
+    // contato que a auditoria pegou (SEC-002).
+    async historicoDoLote(loteId) {
+      const meus = estadoUsuario.bids
+        .filter((b) => b.lotId === loteId)
+        .sort((a, b) => b.placedAt - a.placedAt)
+        .map((b) => ({
+          id: b.id,
+          participante: "Você",
+          valor: b.value,
+          em: b.placedAt,
+          automatico: false,
+          cancelado: Boolean(b.canceled),
+        }));
+      return { ok: true, dados: { lances: meus, apenasLocal: true } };
+    },
+    async verificarEmail() {
+      return { ok: true, dados: { demonstracao: true } };
+    },
+    async reenviarVerificacao() {
+      return { ok: true, dados: { demonstracao: true } };
+    },
+  }), [estadoUsuario]);
 
   return {
     lotes,
@@ -48,7 +72,14 @@ function useCatalogoLocal() {
     recarregar: () => {},
     // Sem servidor não há conta de verdade: a persona da demonstração entra
     // sempre, e a interface avisa que é demonstração (SEC-001).
-    sessao: { usuario: { id: "demo", nome: "Camila", email: "camila@email.com" }, carregando: false, demo: true },
+    sessao: {
+      // `emailVerificado: true` porque não existe endereço para confirmar: a
+      // persona é fictícia, e um aviso de "confirme seu e-mail" que não leva a
+      // lugar nenhum seria ruído puro na demonstração.
+      usuario: { id: "demo", nome: "Camila", email: "camila@email.com", emailVerificado: true },
+      carregando: false,
+      demo: true,
+    },
     acoes,
   };
 }
@@ -165,6 +196,24 @@ function useCatalogoServidor() {
         await api.redefinir(dados);
         sessao.recarregar();
         return { ok: true };
+      } catch (e) { return { ok: false, erro: e }; }
+    },
+    async historicoDoLote(loteId) {
+      try {
+        const r = await api.historicoDoLote(loteId);
+        return { ok: true, dados: { ...r, apenasLocal: false } };
+      } catch (e) { return { ok: false, erro: e }; }
+    },
+    async verificarEmail(token) {
+      try {
+        const r = await api.verificarEmail(token);
+        sessao.recarregar();
+        return { ok: true, dados: r };
+      } catch (e) { return { ok: false, erro: e }; }
+    },
+    async reenviarVerificacao() {
+      try {
+        return { ok: true, dados: await api.reenviarVerificacao() };
       } catch (e) { return { ok: false, erro: e }; }
     },
     async sair() {

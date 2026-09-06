@@ -8,6 +8,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { criarServidor } from "./index.js";
 import { criarLimitador } from "./ratelimit.js";
 import { abrirBanco, semear, buscarLote } from "./db.js";
+import { abrirVerificacao } from "./auth.js";
 import { scheduledEnd } from "../src/domain/schedule.js";
 import { minBidFor } from "../src/domain/auction.js";
 
@@ -43,7 +44,10 @@ beforeAll(async () => {
 afterAll(async () => { await new Promise((r) => servidor.close(r)); });
 
 beforeEach(() => {
-  db.exec("DELETE FROM salvos; DELETE FROM lances; DELETE FROM sessoes; DELETE FROM usuarios; DELETE FROM lotes");
+  db.exec(
+    "DELETE FROM salvos; DELETE FROM lances; DELETE FROM sessoes; DELETE FROM verificacoes; " +
+    "DELETE FROM usuarios; DELETE FROM lotes"
+  );
   semear(db, LOTES());
 });
 
@@ -129,7 +133,9 @@ describe("SEC-003 — sessão por cookie", () => {
     const r = await registrar(c, "a@ex.com");
     const texto = JSON.stringify(r.json);
     expect(texto).not.toMatch(/senha|hash|salt/i);
-    expect(r.json.usuario).toEqual({ id: expect.any(String), email: "a@ex.com", nome: "Pessoa" });
+    expect(r.json.usuario).toEqual({
+      id: expect.any(String), email: "a@ex.com", nome: "Pessoa", emailVerificado: false,
+    });
   });
 
   it("entrar e sair", async () => {
@@ -289,5 +295,114 @@ describe("SEC-006 — cabeçalhos de segurança na API", () => {
     expect(r.headers.get("x-content-type-options")).toBe("nosniff");
     expect(r.headers.get("x-frame-options")).toBe("DENY");
     expect(r.headers.get("cache-control")).toBe("no-store");
+  });
+});
+
+// ------------------------------------------------ pendências de docs/api.md
+describe("paginação de /lotes", () => {
+  it("sem limite, a resposta é a do contrato antigo", async () => {
+    const { json } = await cliente().get("/lotes");
+    expect(json.lotes).toHaveLength(2);
+    expect(json.proximo).toBeNull();
+    expect(json.total).toBe(2);
+  });
+
+  it("com limite, entrega a página e o cursor da seguinte", async () => {
+    const c = cliente();
+    const primeira = await c.get("/lotes?limite=1");
+    expect(primeira.json.lotes).toHaveLength(1);
+    expect(primeira.json.proximo).toBeTruthy();
+
+    const segunda = await c.get(`/lotes?limite=1&cursor=${encodeURIComponent(primeira.json.proximo)}`);
+    expect(segunda.json.lotes).toHaveLength(1);
+    expect(segunda.json.lotes[0].id).not.toBe(primeira.json.lotes[0].id);
+    expect(segunda.json.proximo).toBeNull();
+  });
+
+  it("limite fora de forma é 400, não um palpite", async () => {
+    const c = cliente();
+    expect((await c.get("/lotes?limite=abc")).status).toBe(400);
+    expect((await c.get("/lotes?limite=0")).status).toBe(400);
+    expect((await c.get("/lotes?limite=9999")).status).toBe(400);
+    expect((await c.get("/lotes?limite=1.5")).status).toBe(400);
+  });
+});
+
+describe("histórico público de lances", () => {
+  it("é público e não identifica ninguém", async () => {
+    const ana = cliente();
+    await registrar(ana, "hist-ana@ex.com");
+    const lote = buscarLote(db, "lote-a");
+    await ana.post("/lotes/lote-a/lances", { valor: minBidFor(lote) });
+
+    // Sem cookie nenhum: é a informação que o pregão anuncia em voz alta.
+    const { status, json } = await cliente().get("/lotes/lote-a/lances");
+    expect(status).toBe(200);
+    expect(json.lances).toHaveLength(1);
+    expect(json.lances[0].participante).toBe("Participante 1");
+    expect(JSON.stringify(json)).not.toContain("hist-ana@ex.com");
+  });
+
+  it("lote inexistente é 404", async () => {
+    expect((await cliente().get("/lotes/nao-existe/lances")).status).toBe(404);
+  });
+});
+
+describe("verificação de e-mail", () => {
+  it("a conta nasce não verificada e /auth/eu conta isso", async () => {
+    const c = cliente();
+    const r = await registrar(c, "verificar@ex.com");
+    expect(r.json.usuario.emailVerificado).toBe(false);
+    expect((await c.get("/auth/eu")).json.usuario.emailVerificado).toBe(false);
+  });
+
+  it("o token confirma o endereço, e o link vale uma vez só", async () => {
+    const c = cliente();
+    await registrar(c, "confirma@ex.com");
+    const usuarioId = (await c.get("/auth/eu")).json.usuario.id;
+    // O token nunca volta pela resposta HTTP: quem manda é o canal de e-mail.
+    // Aqui ele é aberto direto no banco, que é o que o canal receberia.
+    const { token } = abrirVerificacao(db, usuarioId);
+
+    const primeira = await cliente().post("/auth/verificar", { token });
+    expect(primeira.status).toBe(200);
+    expect(primeira.json.usuario.emailVerificado).toBe(true);
+    expect((await c.get("/auth/eu")).json.usuario.emailVerificado).toBe(true);
+
+    expect((await cliente().post("/auth/verificar", { token })).status).toBe(400);
+  });
+
+  it("token inválido é 400 com código estável", async () => {
+    const r = await cliente().post("/auth/verificar", { token: "inventado" });
+    expect(r.status).toBe(400);
+    expect(r.json.erro).toBe("token-invalido");
+  });
+
+  it("reenviar exige sessão", async () => {
+    expect((await cliente().post("/auth/verificar/enviar")).status).toBe(401);
+  });
+
+  it("reenviar com a conta já confirmada não manda nada e diz por quê", async () => {
+    const c = cliente();
+    await registrar(c, "reenvio@ex.com");
+    const usuarioId = (await c.get("/auth/eu")).json.usuario.id;
+    await cliente().post("/auth/verificar", { token: abrirVerificacao(db, usuarioId).token });
+
+    const r = await c.post("/auth/verificar/enviar");
+    expect(r.status).toBe(200);
+    expect(r.json.jaVerificado).toBe(true);
+  });
+
+  it("nenhuma resposta devolve o token de confirmação", async () => {
+    const c = cliente();
+    const registro = await registrar(c, "discreta@ex.com");
+    const eu = await c.get("/auth/eu");
+    const reenvio = await c.post("/auth/verificar/enviar");
+    const tudo = JSON.stringify([registro.json, eu.json, reenvio.json]);
+    const guardados = db.prepare("SELECT token_hash FROM verificacoes").all();
+    expect(guardados.length).toBeGreaterThan(0);
+    for (const { token_hash } of guardados) expect(tudo).not.toContain(token_hash);
+    // Nem o hash nem qualquer campo chamado token: o link só existe no e-mail.
+    expect(tudo).not.toMatch(/"token/i);
   });
 });

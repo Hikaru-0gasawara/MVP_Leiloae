@@ -150,7 +150,9 @@ describe("pela rede", () => {
     });
     await new Promise((ok) => servidor.listen(0, ok));
     base = `http://localhost:${servidor.address().port}/api/v1`;
-    vi.spyOn(console, "log").mockImplementation(() => {});
+    // O silenciamento do canal de e-mail vive em server/email.js: este espião
+    // era restaurado pelo `restoreMocks` depois do primeiro teste e não
+    // segurava o resto da suíte.
   });
 
   afterAll(async () => { await new Promise((ok) => servidor.close(ok)); });

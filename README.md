@@ -1,10 +1,36 @@
-# CODING AGENTS: READ THIS FIRST
+# Leiloaê
 
-This is a **handoff bundle** from Claude Design (claude.ai/design).
+"Leilão sem juridiquês" — marketplace de leilões de imóveis e veículos em São Paulo,
+feito para quem nunca participou de um leilão.
 
-A user mocked up designs in HTML/CSS/JS using an AI design tool, then exported this bundle so a coding agent can implement the designs for real.
+**A aplicação está construída.** Ela vive em [`project/`](project) como um app
+React + Vite com back-end Node + SQLite, e é o [`project/README.md`](project/README.md)
+que você quer ler — como rodar, o que o servidor faz, onde estão as regras de negócio.
+Em duas linhas:
 
-## What you should do — IMPORTANT
+```bash
+cd project
+npm install
+npm run dev          # modo demonstração, sem back-end
+```
+
+O contrato da API está em [`project/docs/api.md`](project/docs/api.md).
+
+O restante deste arquivo é o registro de **de onde isto veio**: um bundle de handoff do
+Claude Design, com os protótipos e as conversas que definiram o produto. Continua valendo
+como fonte de intenção — quando uma decisão de interface parecer arbitrária, a explicação
+costuma estar em `chats/`.
+
+---
+
+## De onde veio
+
+Este era um **handoff bundle** do Claude Design (claude.ai/design): alguém desenhou as
+telas em HTML/CSS/JS com uma ferramenta de design assistida por IA e exportou o pacote
+para que um agente de código as implementasse de verdade. Foi o que aconteceu; o
+histórico está nos commits.
+
+## Instruções originais para o agente de código
 
 **Read the chat transcripts first.** There are 5 chat transcript(s) in `chats/`. The transcripts show the full back-and-forth between the user and the design assistant — they tell you **what the user actually wants** and **where they landed** after iterating. Don't skip them. The final HTML files are the output, but the chat is where the intent lives.
 
@@ -23,3 +49,16 @@ The design medium is **HTML/CSS/JS** — these are prototypes, not production co
 - `README.md` — this file
 - `chats/` — conversation transcripts (read these!)
 - `project/` — the `Leiloaê` project files (HTML prototypes, assets, components)
+
+---
+
+## O que mudou desde o handoff
+
+`project/` **não contém mais os protótipos HTML**: eles viraram a aplicação React que
+está lá hoje. O `project/index.html` que as instruções acima mandam ler de ponta a ponta
+existe, mas hoje é o ponto de entrada do Vite — dezenas de linhas, não o desenho. As
+telas estão em `project/src/`. Os transcritos em `chats/` continuam sendo a fonte de intenção, e mais de
+uma decisão do código só faz sentido lendo-os — o exemplo mais caro foi o carrossel
+"Encerrando", que o chat 3 decidiu manter rolando mesmo com "reduzir movimento" ligado, e
+que uma reimplementação bem-intencionada voltou a congelar. Antes de "consertar" um
+comportamento que parece estranho, procure nos chats se ele foi pedido.

@@ -3,15 +3,16 @@ import { useState, useMemo, useId } from "react";
 import { GLOSSARY, VENDORS } from "./data.js";
 import { simulateCost, isEnded, minBidFor, discountPct, referenceValueOf, formatBRL as fmtBRL, formatNumber as fmtNum } from "./domain/auction.js";
 import { useNow } from "./lib/clock.js";
-import { usePrefersReducedMotion } from "./lib/motion.js";
+import { usePrefersReducedMotion, useCarrosseis } from "./lib/motion.js";
 import { CONTACT, hasWhatsApp, openExternal } from "./lib/config.js";
 import { Icon, Badge, Button, Countdown, GlossaryTerm, LotPhoto, SeloProrrogado } from "./components.jsx";
+import { useResource } from "./api/resource.js";
 
 // ============================================================
 // LOT DETAIL — the most important screen
 // ============================================================
-export function LotDetailScreen({ lot, onBack, onBid, onSave }) {
-  const [tab, setTab] = useState("desc"); // desc | rules | docs | glossary
+export function LotDetailScreen({ lot, onBack, onBid, onSave, acoes }) {
+  const [tab, setTab] = useState("desc"); // desc | rules | docs | history | glossary
   const [simulatorValue, setSimulatorValue] = useState(() => minBidFor(lot));
   const simuladorId = useId();
   const now = useNow();
@@ -80,6 +81,7 @@ export function LotDetailScreen({ lot, onBack, onBid, onSave }) {
                 { id: "desc",     label: "Descrição" },
                 { id: "rules",    label: "Regras e taxas" },
                 { id: "docs",     label: "Documentos" },
+                { id: "history",  label: "Histórico de lances" },
                 { id: "glossary", label: "Glossário deste leilão" },
               ].map(t => (
                 <button key={t.id} onClick={() => setTab(t.id)} style={{
@@ -111,6 +113,7 @@ export function LotDetailScreen({ lot, onBack, onBid, onSave }) {
                 </div>
               </div>
             )}
+            {tab === "history" && <HistoricoDeLances lot={lot} acoes={acoes} />}
             {tab === "docs" && (
               <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 10 }}>
                 {lot.docs.map((doc, i) => (
@@ -316,18 +319,111 @@ function Stat2({ label, value }) {
   );
 }
 
+/**
+ * Histórico público de lances (pendência registrada em docs/api.md).
+ *
+ * A trilha existia no banco desde o começo e não era exposta por rota nenhuma.
+ * O que faltava não era código, era decidir o que aparece sobre quem deu cada
+ * lance — a decisão está em `historicoDoLote`, em server/db.js: apelido por
+ * lote, nada de nome, e-mail ou teto.
+ *
+ * Sem servidor, esta aba mostra apenas os lances desta pessoa neste navegador,
+ * e diz isso. Inventar adversários numa demonstração seria a mesma desonestidade
+ * que a auditoria pegou no formulário de contato.
+ */
+function HistoricoDeLances({ lot, acoes }) {
+  // `useResource` em vez de efeito com setState: é o hook que a aplicação já
+  // usa para "carregando / erro / recarregar", e ele resolve de graça o pedido
+  // atrasado de um lote anterior sobrescrever o do lote atual.
+  const historico = useResource(
+    async () => {
+      const r = await acoes?.historicoDoLote?.(lot.id);
+      if (!r?.ok) throw r?.erro || new Error("Não foi possível carregar o histórico agora.");
+      return r.dados;
+    },
+    { deps: [lot.id] }
+  );
+
+  if (historico.carregando) {
+    return <p style={{ color: "var(--text-mute)", fontSize: 14 }}>Carregando o histórico…</p>;
+  }
+  if (historico.erro) {
+    return (
+      <p style={{ color: "var(--text-dim)", fontSize: 14 }}>
+        {historico.erro.mensagem || historico.erro.message}
+      </p>
+    );
+  }
+
+  const lances = historico.dados?.lances ?? [];
+  const apenasLocal = Boolean(historico.dados?.apenasLocal);
+
+  return (
+    <div style={{ maxWidth: 680 }}>
+      <p style={{ color: "var(--text-mute)", fontSize: 12.5, lineHeight: 1.6, margin: "0 0 14px" }}>
+        {apenasLocal
+          ? "Nesta demonstração só aparecem os lances que você deu neste navegador — não há outros participantes."
+          : "Quem deu cada lance não é identificado: o apelido vale só dentro deste lote."}
+      </p>
+
+      {lances.length === 0 ? (
+        <p style={{ color: "var(--text-dim)", fontSize: 14.5 }}>
+          Nenhum lance ainda. O primeiro pode ser o seu.
+        </p>
+      ) : (
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+          <caption style={{ textAlign: "left", color: "var(--text-mute)", fontSize: 12, paddingBottom: 8 }}>
+            {lances.length} {lances.length === 1 ? "lance" : "lances"}, do mais recente ao mais antigo
+          </caption>
+          <thead>
+            <tr style={{ color: "var(--text-mute)", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              <th scope="col" style={{ textAlign: "left", padding: "6px 0", fontWeight: 500 }}>Quem</th>
+              <th scope="col" style={{ textAlign: "right", padding: "6px 0", fontWeight: 500 }}>Valor</th>
+              <th scope="col" style={{ textAlign: "right", padding: "6px 0", fontWeight: 500 }}>Quando</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lances.map((l) => (
+              <tr key={l.id} style={{ borderTop: "1px solid var(--border)", color: "var(--text-dim)" }}>
+                <td style={{ padding: "10px 0" }}>
+                  {l.participante}
+                  {l.automatico && <Badge tone="neutral" style={{ marginLeft: 8 }}>automático</Badge>}
+                  {l.cancelado && <Badge tone="neutral" style={{ marginLeft: 8 }}>cancelado</Badge>}
+                </td>
+                <td style={{
+                  padding: "10px 0", textAlign: "right", fontFamily: "var(--mono)",
+                  color: l.cancelado ? "var(--text-dim)" : "var(--text)",
+                  textDecoration: l.cancelado ? "line-through" : "none",
+                }}>{fmtBRL(l.valor)}</td>
+                <td style={{ padding: "10px 0", textAlign: "right", whiteSpace: "nowrap" }}>
+                  {new Date(l.em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 // ---------- Gallery ----------
 function Gallery({ lot, onSave }) {
   const [manualIdx, setManualIdx] = useState(0);
   const [auto, setAuto] = useState(true);
   const thumbs = [0, 1, 2, 3];
   const now = useNow();
-  const semMovimento = usePrefersReducedMotion();
+  const carrosseis = useCarrosseis();
   // Índice derivado do relógio compartilhado, como nos cards: sem timer próprio
   // e já suspenso em aba oculta (FRONT-004). O clique numa miniatura sai do
   // modo automático e passa a mandar no índice.
-  const rodando = auto && !semMovimento;
-  const idx = rodando ? Math.floor(now / 3500) % thumbs.length : manualIdx;
+  //
+  // A galeria não desliga mais sozinha com "reduzir movimento": ela era a única
+  // pista de que o lote tem quatro fotos, e sem ela as setas e as miniaturas
+  // ficavam parecendo enfeite. Quem quer parar tem o selo "auto", que virou
+  // botão, e o botão da faixa do topo — a pausa congela a foto atual.
+  const rodando = auto && !carrosseis.pausado;
+  const idx = auto ? Math.floor(((carrosseis.pausadoEm ?? now)) / 3500) % thumbs.length : manualIdx;
   const escolher = (i) => { setAuto(false); setManualIdx(i); };
   return (
     <div>
@@ -335,7 +431,26 @@ function Gallery({ lot, onSave }) {
         <LotPhoto lot={lot} height={460} rounded="var(--radius-lg)" showBadges photoIndex={idx} context="hero">
           <div style={{ position: "absolute", bottom: 14, left: 14, display: "flex", gap: 8 }}>
             <Badge tone="dark">Foto {idx + 1} de {thumbs.length}</Badge>
-            {auto && <Badge tone="dark"><span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)", animation: "leiloe-pulse 1.4s infinite", display: "inline-block" }} /> auto</Badge>}
+            {/* O selo "auto" era só decorativo: a única forma de sair do
+                automático era clicar numa seta ou miniatura, e não havia como
+                voltar. Agora é botão, nos dois sentidos. */}
+            <button
+              type="button"
+              onClick={() => { setAuto((v) => !v); setManualIdx(idx); }}
+              aria-pressed={auto}
+              aria-label={auto ? "Parar a troca automática de fotos" : "Retomar a troca automática de fotos"}
+              style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}
+            >
+              <Badge tone="dark">
+                <span aria-hidden="true" style={{
+                  width: 6, height: 6, borderRadius: "50%",
+                  background: rodando ? "var(--accent)" : "var(--text-mute)",
+                  animation: rodando ? "leiloe-pulse 1.4s infinite" : "none",
+                  display: "inline-block",
+                }} />
+                {auto ? "auto" : "manual"}
+              </Badge>
+            </button>
           </div>
           <button onClick={() => onSave(lot)} style={{
             position: "absolute", top: 14, right: 14,
@@ -512,6 +627,11 @@ function ChecklistItem({ n, title, body, done, onToggle, deadline, last }) {
 }
 
 function Confetti() {
+  // O confete é enfeite puro — ao contrário do ticker e da galeria, não carrega
+  // informação nenhuma. Com "reduzir movimento" ligado ele não é desenhado: a
+  // regra global de CSS já zerava a duração, mas os 36 elementos continuavam
+  // sendo criados e ficavam empilhados no topo da tela.
+  const semMovimento = usePrefersReducedMotion();
   // Sequência determinística: mantém o render puro (sem Math.random durante o
   // render) e torna a tela reproduzível em teste e captura de tela.
   const pieces = useMemo(() => {
@@ -525,6 +645,7 @@ function Confetti() {
       rotation: rand(i + 5) * 360,
     }));
   }, []);
+  if (semMovimento) return null;
   return (
     <div style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 0 }}>
       {pieces.map((p, i) => (

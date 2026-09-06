@@ -8,12 +8,12 @@
 
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { extname, join, normalize, dirname } from "node:path";
+import { existsSync, statSync } from "node:fs";
+import { extname, join, normalize, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { abrirBanco, semear } from "./db.js";
 import { criarRotas } from "./routes.js";
-import { limparSessoesExpiradas, limparRecuperacoes } from "./auth.js";
+import { limparSessoesExpiradas, limparRecuperacoes, limparVerificacoes } from "./auth.js";
 import { criarLimitador } from "./ratelimit.js";
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -95,7 +95,7 @@ export function criarServidor(opcoes = {}) {
 
     // ---- API --------------------------------------------------------------
     try {
-      const resultado = await despachar(req, caminho);
+      const resultado = await despachar(req, caminho, url.searchParams);
       if (resultado) {
         const { status = 200, corpo, cookie, cabecalhos } = resultado;
         if (cookie) res.setHeader("Set-Cookie", cookie);
@@ -123,7 +123,11 @@ export function criarServidor(opcoes = {}) {
       return;
     }
     let arquivo = join(DIST, normalize(caminho).replace(/^(\.\.[/\\])+/, ""));
-    if (!existsSync(arquivo) || arquivo.endsWith("/")) arquivo = join(DIST, "index.html");
+    // A checagem de "termina em barra" so valia no POSIX: no Windows
+    // `normalize("/")` devolve a barra invertida, `join` cai no proprio dist e o
+    // servidor tentava LER a pasta (EISDIR) - "/" respondia 500 na maquina de
+    // quem desenvolve. Perguntar se e diretorio funciona nos dois.
+    if (!existsSync(arquivo) || statSync(arquivo).isDirectory()) arquivo = join(DIST, "index.html");
     if (caminho.startsWith("/assets/")) res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
     res.writeHead(200, { "Content-Type": TIPOS[extname(arquivo)] || "application/octet-stream" });
     res.end(await readFile(arquivo));
@@ -136,6 +140,7 @@ export function criarServidor(opcoes = {}) {
     try {
       limparSessoesExpiradas(db);
       limparRecuperacoes(db);
+      limparVerificacoes(db);
       limitador.limpar();
     } catch (e) {
       console.error("[Leiloaê] falha na manutenção periódica:", e);
@@ -153,8 +158,14 @@ export function criarServidor(opcoes = {}) {
 }
 
 // Execução direta: `node server/index.js`
-const executado = process.argv[1]?.split("/").pop();
-if (executado && import.meta.url.endsWith(executado)) {
+//
+// A comparação era pelo último segmento de `process.argv[1]` partido em "/".
+// No Windows o caminho vem com "\\", então o split não separava nada e a
+// condição era sempre falsa: `npm run servidor` terminava com código 0 sem
+// abrir porta nenhuma, e sem dizer por quê. Agora os dois lados viram caminho
+// absoluto do sistema antes de comparar.
+const esteArquivo = fileURLToPath(import.meta.url);
+if (process.argv[1] && resolve(process.argv[1]) === esteArquivo) {
   const porta = Number(process.env.PORT || 3000);
   criarServidor().listen(porta, () => {
     console.log(`Leiloaê em http://localhost:${porta}  (API em /api/v1)`);

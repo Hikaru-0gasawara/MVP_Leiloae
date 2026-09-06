@@ -1,6 +1,6 @@
 # Contrato da API — v1
 
-Versão: **1.1.0** · Prefixo: `/api/v1` · Confirmável em `GET /api/v1/saude`.
+Versão: **1.2.0** · Prefixo: `/api/v1` · Confirmável em `GET /api/v1/saude`.
 
 Este documento é o contrato. Mudança incompatível exige um prefixo novo
 (`/api/v2`); acréscimo compatível sobe a versão menor.
@@ -48,8 +48,8 @@ Toda resposta é JSON. O erro tem sempre a mesma forma:
 | `rota-inexistente` | 404 | — |
 | `metodo-nao-permitido` | 405 | — |
 | `excesso-de-pedidos` | 429 | Limite de taxa; a resposta traz `Retry-After` |
-| `token-invalido` | 400 | Link de redefinição inválido, expirado ou já usado |
-| `canal-indisponivel` | 503 | Recuperação por e-mail não configurada no ambiente |
+| `token-invalido` | 400 | Link de redefinição ou de confirmação inválido, expirado ou já usado |
+| `canal-indisponivel` | 503 | Canal de e-mail não configurado no ambiente |
 | `erro-interno` | 500 | Falha inesperada; detalhe fica no log, não na resposta |
 
 ## Sessão
@@ -66,9 +66,13 @@ guarda o SHA-256. `SameSite=Lax` é o que dispensa token de CSRF nas escritas.
 | GET | `/auth/eu` | — | `200 {usuario\|null}` |
 | POST | `/auth/recuperar` | — | `200 {ok, mensagem}` — sempre igual |
 | POST | `/auth/redefinir` | — | `200 {ok}` + cookie expirado |
+| POST | `/auth/verificar` | — | `200 {ok, usuario}` |
+| POST | `/auth/verificar/enviar` | exige | `200 {ok, jaVerificado}` |
 
 `registrar` exige `{email, senha, nome}`; senha com no mínimo 10 caracteres.
 Nenhuma resposta em nenhuma rota devolve hash, sal ou senha.
+
+O objeto `usuario` é `{id, email, nome, emailVerificado}`.
 
 ### Recuperação de senha
 
@@ -83,6 +87,30 @@ configurado, a rota responde `503 canal-indisponivel`, em vez de fingir envio.
 estivesse dentro — trocar a senha sem isso é o momento em que a vítima acha que
 resolveu e não resolveu.
 
+### Verificação de e-mail
+
+O cadastro dispara um link de confirmação pelo canal configurado
+(`LEILOAE_EMAIL_ENDPOINT`). Como na recuperação, o token vai **só pelo e-mail**,
+é guardado como hash, vale 24 h e só pode ser usado uma vez; pedir um novo
+invalida o anterior.
+
+`POST /auth/verificar {token}` consome o token e marca o endereço como
+confirmado. É **público** de propósito: o link do e-mail costuma ser aberto
+noutro navegador, onde não existe sessão. Ao contrário da redefinição de senha,
+**não derruba as sessões** — confirmar um endereço não troca credencial nenhuma.
+
+`POST /auth/verificar/enviar` reenvia o link. Exige sessão, porque sem isso
+seria um jeito de mandar e-mail para qualquer endereço a partir do nosso
+domínio; sem canal configurado responde `503 canal-indisponivel`. Conta já
+confirmada recebe `200 {ok: true, jaVerificado: true}` e nada é enviado.
+
+**A conta funciona sem verificação, de propósito.** Travar o lance atrás de um
+e-mail que pode nunca chegar (provedor bloqueando, caixa cheia) trocaria um
+problema raro por um que impede de usar o produto. O que muda é que a interface
+diz, de forma visível, que o endereço ainda não foi confirmado — e é isso que
+resolve o defeito de origem: um endereço digitado errado aparecia só quando a
+pessoa tentava recuperar a senha, já trancada para fora.
+
 ## Limitação de taxa
 
 Balde de fichas por cliente e por perfil de rota. Excedido, a resposta é `429`
@@ -90,7 +118,7 @@ com `Retry-After` em segundos.
 
 | Perfil | Rotas | Padrão |
 | --- | --- | --- |
-| `autenticacao` | entrar, registrar, recuperar, redefinir | 10 de imediato, +1/min |
+| `autenticacao` | entrar, registrar, recuperar, redefinir, verificar | 10 de imediato, +1/min |
 | `escrita` | lances, cancelamento, favoritos | 30 de imediato, +60/min |
 | `leitura` | o resto | 120 de imediato, +240/min |
 
@@ -109,9 +137,43 @@ armazenamento compartilhado.
 
 | Método | Rota | Resposta |
 | --- | --- | --- |
-| GET | `/lotes` | `{lotes: Lote[], agora}` |
+| GET | `/lotes` | `{lotes: Lote[], proximo, total, agora}` |
 | GET | `/lotes/:id` | `{lote: Lote, agora}` |
+| GET | `/lotes/:id/lances` | `{lances: LanceDoHistorico[], agora}` |
 | GET | `/saude` | `{ok, versao, agora}` |
+
+### Paginação
+
+`GET /lotes` aceita `?limite=` (inteiro de 1 a 200) e `?cursor=`. **Sem
+`limite`, responde o catálogo inteiro**, exatamente como na 1.1 — nenhum cliente
+existente precisa saber que a paginação passou a existir. Com `limite`, `proximo`
+traz o cursor da página seguinte, ou `null` quando acabou. `limite` fora de forma
+é `400 dados-invalidos`, não um palpite: quem pediu `limite=abc` tem um defeito,
+e arredondar esconderia isso de quem o escreveu.
+
+A paginação é por **chave**, não por `OFFSET`, e a chave é
+`(encerra_em_original, id)` — o horário do edital, que a prorrogação não move.
+Com `OFFSET`, ou ordenando por `encerra_em`, um lote prorrogado no meio da
+leitura reapareceria na página seguinte e o vizinho sumiria. A diferença de
+ordem entre as duas colunas é de no máximo dois minutos, e a interface reordena
+por conta própria.
+
+### Histórico público de lances
+
+`GET /lotes/:id/lances` devolve a disputa do lote, sem sessão — é a mesma
+informação que o pregão anuncia em voz alta na sala. O que faltava não era
+código: era decidir o que aparece sobre quem deu cada lance. A decisão:
+
+- **Ninguém é identificado.** Cada conta vira `Participante N` **dentro daquele
+  lote**, numerada pela ordem do primeiro lance. O número não segue a pessoa
+  para outro lote, então dois históricos não podem ser cruzados para
+  reconstruir o comportamento de alguém no site inteiro.
+- **Sai o que o leilão já anuncia**: `{id, participante, valor, em, automatico,
+  cancelado}`. Nome, e-mail, id e **teto** não saem — o teto principalmente,
+  porque é a informação com que se ganha do outro.
+- **Lance cancelado aparece marcado, não sumido.** A trilha não apaga o que
+  existiu, e um valor que some da lista sem explicação é exatamente o que faz o
+  iniciante achar que o leilão foi mexido.
 
 `Lote` tem `endsAt` absoluto em milissegundos e `versao`, que incrementa a cada
 escrita — serve para detectar leitura velha. A forma completa está tipada em
@@ -187,16 +249,23 @@ produção. Respostas de API são `Cache-Control: no-store`.
 
 Registrado aqui para não ser confundido com omissão:
 
-- **Sem verificação de e-mail** no cadastro. A conta funciona antes de o
-  endereço ser confirmado, então um endereço digitado errado só aparece quando
-  a pessoa tenta recuperar a senha.
-- **Sem paginação** em `/lotes`: o catálogo tem 14 itens. Passa a ser
-  necessária muito antes de mil.
-- **Limitação de taxa por processo**, não por cluster (ver acima).
-- **Sem histórico público de lances por lote.** A trilha existe no banco e não
-  é exposta por nenhuma rota; publicar exige decidir antes o que aparece sobre
-  quem deu cada lance.
-- **Sem backup nem política de retenção** definidos para o arquivo SQLite.
+- **Limitação de taxa por processo**, não por cluster (ver acima). Não é
+  descuido nem falta de tempo: um limite que vale num cluster precisa de
+  estado compartilhado (Redis ou equivalente), e isso é a primeira dependência
+  de infraestrutura do projeto — decisão de operação, não de código. Com uma
+  instância, o limite atual vale exatamente o que promete.
 - **A janela de prorrogação (2 min) é uma escolha técnica, não uma regra de
   edital.** Precisa ser confirmada pelo negócio e constar do edital de cada
-  lote antes de ir ao ar.
+  lote antes de ir ao ar. É o único item desta lista que nenhuma quantidade de
+  código resolve.
+
+Resolvido desde a versão 1.1, e registrado aqui para quem voltar a este
+documento procurando:
+
+- **Verificação de e-mail** no cadastro — ver acima.
+- **Paginação** em `/lotes` — ver acima.
+- **Histórico público de lances por lote** — ver acima.
+- **Backup e retenção** do arquivo SQLite: `npm run backup` (`scripts/backup.mjs`),
+  cópia consistente por `VACUUM INTO`, conferida antes de qualquer limpeza, com
+  retenção por idade e um mínimo por contagem que impede a limpeza de apagar
+  tudo. Detalhes no README.

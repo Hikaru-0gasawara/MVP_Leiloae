@@ -7,7 +7,7 @@
 import { test, expect } from "@playwright/test";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { extname, join, normalize, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -48,7 +48,11 @@ test.beforeAll(async () => {
     const caminho = decodeURIComponent(new URL(req.url, "http://x").pathname);
     let arquivo = join(DIST, normalize(caminho).replace(/^(\.\.[/\\])+/, ""));
     // Reescrita de SPA, como em public/_redirects e vercel.json (ARCH-002).
-    if (!existsSync(arquivo) || arquivo.endsWith("/")) arquivo = join(DIST, "index.html");
+    // O teste do fim em "/" só valia no POSIX: no Windows `normalize("/")` dá
+    // "\\", `join` devolve o próprio dist e o servidor tentava LER a pasta
+    // (EISDIR). Perguntar se é diretório cobre os dois sistemas.
+    const ehPasta = existsSync(arquivo) && statSync(arquivo).isDirectory();
+    if (!existsSync(arquivo) || ehPasta) arquivo = join(DIST, "index.html");
     for (const b of blocos) if (casa(b.padrao, caminho)) for (const [k, v] of Object.entries(b.headers)) res.setHeader(k, v);
     res.setHeader("Content-Type", TIPOS[extname(arquivo)] || "application/octet-stream");
     res.end(await readFile(arquivo));

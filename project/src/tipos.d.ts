@@ -108,4 +108,17 @@ export interface Usuario {
   id: string;
   email: string;
   nome: string;
+  /** Endereço confirmado pelo link do e-mail. A conta funciona sem isso. */
+  emailVerificado: boolean;
+}
+
+/** Uma linha do histórico público de lances de um lote. */
+export interface LanceDoHistorico {
+  id: string;
+  /** Apelido válido apenas dentro daquele lote — nunca identifica a pessoa. */
+  participante: string;
+  valor: number;
+  em: number;
+  automatico: boolean;
+  cancelado: boolean;
 }

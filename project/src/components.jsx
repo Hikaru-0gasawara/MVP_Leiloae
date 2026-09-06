@@ -7,7 +7,7 @@ import {
   discountPct, isEnded, referenceValueOf, foiProrrogado,
 } from "./domain/auction.js";
 import { useNow } from "./lib/clock.js";
-import { usePrefersReducedMotion, offsetFromId } from "./lib/motion.js";
+import { useCarrosseis, offsetFromId } from "./lib/motion.js";
 import { photoSources, photoAlt } from "./lib/photos.js";
 import { IS_DEMO } from "./lib/config.js";
 import { useCompare } from "./state/compareStore.js";
@@ -237,9 +237,14 @@ export function Countdown({ endsAt, compact, big, onDark }) {
  * sem width/height nem tratamento de falha (FRONT-009).
  */
 function LotImage({ lot, index, context, height }) {
-  const [failed, setFailed] = useState(false);
+  // A falha é guardada POR FOTO, não por card. Como um booleano, a primeira
+  // imagem que não carregasse desligava o card inteiro para sempre: o
+  // componente não é remontado quando o índice gira, então nem a rotação
+  // trazia as outras três de volta. Um tropeço de rede deixava o card sem
+  // foto nenhuma até a recarga da página.
+  const [falhou, setFalhou] = useState(/** @type {string|null} */ (null));
   const id = lot.photoIds?.[index % (lot.photoIds?.length || 1)];
-  const sources = failed ? null : photoSources(id, context);
+  const sources = falhou === id ? null : photoSources(id, context);
   if (!sources) return null;
   return (
     <img
@@ -252,7 +257,7 @@ function LotImage({ lot, index, context, height }) {
       decoding="async"
       width={1200}
       height={Math.max(1, Math.round(height * (1200 / 360)))}
-      onError={() => setFailed(true)}
+      onError={() => setFalhou(id)}
       style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
     />
   );
@@ -266,12 +271,19 @@ function LotImage({ lot, index, context, height }) {
  * com 15 timers ativos — e o custo crescia com o catálogo. Como o relógio já
  * pausa em aba oculta, a rotação pausa junto de graça. O `seed` escalona os
  * cards para que não troquem todos no mesmo segundo.
+ *
+ * Antes isto parava sozinho com `prefers-reduced-motion`, e num sistema com
+ * "reduzir movimento" ligado o catálogo inteiro mostrava só a primeira foto,
+ * sem nenhuma pista de que havia mais. A troca de foto é conteúdo, não
+ * transição: roda sempre, e quem quiser parar usa o botão da faixa — o
+ * instante da pausa entra no lugar do relógio, então congela onde está em vez
+ * de saltar para a foto 1.
  */
 function useRotatingIndex(length, intervalMs, enabled = true, seed = 0) {
   const now = useNow();
-  const semMovimento = usePrefersReducedMotion();
-  if (!enabled || semMovimento || length <= 1) return 0;
-  return Math.floor((now + seed) / intervalMs) % length;
+  const { pausadoEm } = useCarrosseis();
+  if (!enabled || length <= 1) return 0;
+  return Math.floor(((pausadoEm ?? now) + seed) / intervalMs) % length;
 }
 
 // ---------- Lot Photo ----------

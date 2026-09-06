@@ -152,3 +152,20 @@ input, textarea, select { font-family: inherit; }
     transition-duration: 0.01ms !important;
   }
 }
+
+/* O ticker "Encerrando" é conteúdo ao vivo, não transição decorativa: continua
+   rolando mesmo com "reduzir movimento" ligado — congelá-lo transformava a
+   faixa numa lista estática e tirava o sentido do header. O `!important`
+   existe para vencer a regra global de reduced-motion acima (a classe ganha
+   dela por especificidade); a pausa é explícita, pelo hover, pelo foco de
+   teclado e pelo botão da faixa, que é o que a WCAG 2.2.2 pede.
+
+   A duração vem por variável em vez de `animation` inline porque a regra
+   global usa `!important`, e `!important` de folha de estilo vence estilo
+   inline — a duração inline seria ignorada. */
+.ticker-marquee {
+  animation: leiloe-marquee var(--ticker-dur, 60s) linear infinite !important;
+}
+.ticker-marquee[data-pausado="true"] {
+  animation-play-state: paused !important;
+}

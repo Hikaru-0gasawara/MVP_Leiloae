@@ -91,6 +91,39 @@ async function pedir(caminho, { metodo = "GET", corpo, sinal } = {}) {
   return dados;
 }
 
+/**
+ * Tamanho de página do catálogo. O catálogo de hoje cabe numa página só, então
+ * na prática isto continua sendo UMA requisição — mas o cliente já não depende
+ * disso: quando o catálogo crescer, ele pagina em vez de pedir tudo de uma vez
+ * e travar a primeira pintura da tela.
+ */
+const PAGINA_DO_CATALOGO = 100;
+/** Trava de segurança: cursor com defeito não vira laço infinito de rede. */
+const MAXIMO_DE_PAGINAS = 100;
+
+/**
+ * Catálogo inteiro, montado a partir das páginas.
+ * @param {AbortSignal} [sinal]
+ */
+async function catalogoCompleto(sinal) {
+  /** @type {any[]} */
+  const lotes = [];
+  let cursor = null;
+  let agora = Date.now();
+  let total = 0;
+  for (let pagina = 0; pagina < MAXIMO_DE_PAGINAS; pagina++) {
+    const query = new URLSearchParams({ limite: String(PAGINA_DO_CATALOGO) });
+    if (cursor) query.set("cursor", cursor);
+    const r = await pedir(`/api/v1/lotes?${query}`, { sinal });
+    lotes.push(...(r?.lotes ?? []));
+    agora = r?.agora ?? agora;
+    total = r?.total ?? lotes.length;
+    cursor = r?.proximo ?? null;
+    if (!cursor) break;
+  }
+  return { lotes, agora, total };
+}
+
 export const api = {
   saude: () => pedir("/api/v1/saude"),
 
@@ -101,10 +134,15 @@ export const api = {
   sair: () => pedir("/api/v1/auth/sair", { metodo: "POST" }),
   recuperar: (email) => pedir("/api/v1/auth/recuperar", { metodo: "POST", corpo: { email } }),
   redefinir: (dados) => pedir("/api/v1/auth/redefinir", { metodo: "POST", corpo: dados }),
+  verificarEmail: (token) => pedir("/api/v1/auth/verificar", { metodo: "POST", corpo: { token } }),
+  reenviarVerificacao: () => pedir("/api/v1/auth/verificar/enviar", { metodo: "POST" }),
 
   // catálogo
-  lotes: (sinal) => pedir("/api/v1/lotes", { sinal }),
+  lotes: (sinal) => catalogoCompleto(sinal),
   lote: (id, sinal) => pedir(`/api/v1/lotes/${encodeURIComponent(id)}`, { sinal }),
+  /** Histórico público de lances do lote. Não exige sessão. */
+  historicoDoLote: (id, sinal) =>
+    pedir(`/api/v1/lotes/${encodeURIComponent(id)}/lances`, { sinal }),
 
   // lances
   darLance: (loteId, { valor, teto }) =>
