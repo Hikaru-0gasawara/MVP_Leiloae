@@ -28,6 +28,7 @@ const SIMPLE = {
   history: "/conta/historico",
   messages: "/conta/mensagens",
   entrar: "/entrar",
+  redefinir: "/redefinir",
   payments: "/conta/pagamentos",
   settings: "/conta/configuracoes",
 };
@@ -72,6 +73,7 @@ export function routeTitle(route, lot) {
     case "history": return `Histórico · ${base}`;
     case "messages": return `Mensagens · ${base}`;
     case "entrar": return `Entrar · ${base}`;
+    case "redefinir": return `Redefinir senha · ${base}`;
     case "payments": return `Pagamentos · ${base}`;
     case "settings": return `Configurações · ${base}`;
     case "page": return `${base}`;

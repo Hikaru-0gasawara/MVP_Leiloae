@@ -79,6 +79,110 @@ export function incrementOptionsFor(lot) {
   return [step, step * 2, step * 4, step * 10];
 }
 
+// ---------------------------------------------------------------------------
+// Lance automático (proxy bidding)
+// ---------------------------------------------------------------------------
+//
+// A interface sempre ofereceu "dar lances automaticamente até um teto", e o
+// teto era guardado sem nunca ser usado: quem confiou nele simplesmente perdia
+// o leilão em silêncio. Esta é a regra que faltava.
+//
+// O modelo é o clássico de leilão inglês com procuração: o teto NÃO é o valor
+// pago. Quem tem o maior teto vence pagando apenas o necessário para superar o
+// segundo maior — um incremento acima dele, ou o próprio teto, o que for menor.
+// Assim revelar um teto alto não custa dinheiro, que é o que torna o mecanismo
+// seguro para o iniciante a quem o produto se dirige.
+
+/**
+ * @typedef {object} Teto
+ * @property {string} usuarioId
+ * @property {number} limite  maior valor que a pessoa autorizou
+ * @property {number} desde   instante do lance que registrou o teto (desempate)
+ */
+
+/**
+ * Resolve a disputa entre tetos e diz qual deve ser o lance vencedor.
+ *
+ * Empate no limite é resolvido por ordem de chegada: quem chegou primeiro
+ * mantém a liderança sem precisar pagar mais. Qualquer outro critério
+ * premiaria quem observa o adversário e copia o teto.
+ *
+ * @param {any} lote
+ * @param {Teto[]} tetos um por pessoa, já consolidado no maior de cada uma
+ * @param {string|null} liderAtual quem detém o lance atual
+ * @returns {{usuarioId: string, valor: number}|null} lance a registrar, ou null
+ */
+export function resolverAutomatico(lote, tetos, liderAtual = null) {
+  const validos = (tetos || []).filter((t) => t && Number.isFinite(t.limite) && t.limite > 0);
+  if (validos.length === 0) return null;
+
+  // Maior limite vence; empate fica com quem registrou antes.
+  const ordenados = [...validos].sort(
+    (a, b) => b.limite - a.limite || (a.desde ?? 0) - (b.desde ?? 0)
+  );
+  const vencedor = ordenados[0];
+  const segundo = ordenados[1];
+  const atual = lote?.currentBid ?? 0;
+  const minimo = minBidFor(lote);
+  const incremento = minIncrementFor(lote);
+  const piso = lote?.minBid ?? 0;
+
+  // Quem já lidera só é elevado quando existe ameaça REAL: um teto alheio
+  // capaz de passar o preço atual. Sem esta condição o automático dispara
+  // contra si mesmo e o leilão sobe sozinho até o teto.
+  const ameaca = segundo && segundo.limite > atual;
+  if (vencedor.usuarioId === liderAtual && !ameaca) return null;
+
+  // Preço: um incremento acima do segundo maior teto (ou acima do lance atual,
+  // se não há segundo), limitado pelo teto de quem vence.
+  const aBater = Math.max(segundo ? segundo.limite : 0, atual);
+  const valor = Math.min(vencedor.limite, Math.max(aBater + incremento, minimo));
+
+  // Precisa superar o preço atual e respeitar o piso do edital.
+  if (valor <= atual || valor < piso) return null;
+
+  // O incremento cheio é exigência para o lance DIGITADO — existe para impedir
+  // disputa por centavos. Numa procuração ele cede num caso: quando o teto de
+  // quem vence não alcança o incremento cheio mas ainda supera o teto do
+  // segundo. Sem essa exceção, quem autorizou MAIS perderia para quem
+  // autorizou menos, só porque a diferença entre os dois é pequena.
+  const superaOSegundo = Boolean(segundo) && valor > segundo.limite;
+  if (valor < minimo && !superaOSegundo) return null;
+
+  return { usuarioId: vencedor.usuarioId, valor };
+}
+
+// ---------------------------------------------------------------------------
+// Prorrogação de encerramento (anti-sniping)
+// ---------------------------------------------------------------------------
+//
+// A auditoria classificou a rajada final como o risco estrutural do domínio.
+// Sem prorrogação, quem dá o lance no último segundo vence não por oferecer
+// mais, mas por não deixar tempo de resposta — e leilão presencial não
+// funciona assim: o pregão só fecha quando ninguém mais cobre.
+
+/** Janela em que um lance novo empurra o encerramento. */
+export const JANELA_PRORROGACAO_MS = 2 * 60 * 1000;
+
+/**
+ * Novo instante de encerramento após um lance, ou o mesmo se não prorroga.
+ * @param {any} lote
+ * @param {number} agora
+ * @returns {number}
+ */
+export function encerramentoApos(lote, agora = Date.now()) {
+  const fim = Number(lote?.endsAt);
+  if (!Number.isFinite(fim)) return fim;
+  if (fim <= agora) return fim; // já encerrou: lance nenhum ressuscita o lote
+  const restante = fim - agora;
+  return restante < JANELA_PRORROGACAO_MS ? agora + JANELA_PRORROGACAO_MS : fim;
+}
+
+/** O lote foi prorrogado em relação ao horário original? */
+export function foiProrrogado(lote) {
+  return Boolean(lote?.encerramentoOriginal && lote.endsAt > lote.encerramentoOriginal);
+}
+
 /** Valor de referência de mercado (FIPE para veículo, avaliação para imóvel). */
 export function referenceValueOf(lot) {
   const ref = lot?.category === "carro" ? lot?.fipe : lot?.appraised;

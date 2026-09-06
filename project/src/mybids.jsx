@@ -11,7 +11,7 @@ import {
 import { useNow } from "./lib/clock.js";
 import { VENDORS } from "./data.js";
 import { CONTACT, hasWhatsApp, openExternal } from "./lib/config.js";
-import { SectionHead, Button, Icon, Countdown, LotPhoto } from "./components.jsx";
+import { SectionHead, Button, Icon, Countdown, LotPhoto, SeloAutomatico, SeloProrrogado } from "./components.jsx";
 import { StatCard } from "./screens.jsx";
 import { Dialog } from "./ui/Dialog.jsx";
 
@@ -167,16 +167,24 @@ function BidRow({ entry, now, onOpenLot, onCover, onCancel, onDetails }) {
             ? `${lot.year} · ${lot.transmission} · ${fmtNum(lot.km)} km`
             : `${(lot.address || "").split(" — ")[1] || ""} · ${lot.region}`}
         </div>
-        <div style={{ display: "flex", gap: 18, marginTop: 8, flexWrap: "wrap", fontSize: 12.5 }}>
+        <div style={{ display: "flex", gap: 18, marginTop: 8, flexWrap: "wrap", fontSize: 12.5, alignItems: "center" }}>
           <span style={{ color: "var(--text-mute)" }}>
             Meu lance <b style={{ fontFamily: "var(--mono)", color: "var(--text)", fontWeight: 600 }}>{fmtBRL(bid.value)}</b>
           </span>
+          {/* Um lance que a pessoa não digitou precisa se apresentar como tal. */}
+          {bid.automatico && <SeloAutomatico />}
+          {bid.autoMax > 0 && !bid.automatico && (
+            <span style={{ color: "var(--text-mute)" }}>
+              Teto <b style={{ fontFamily: "var(--mono)", color: "var(--text)", fontWeight: 600 }}>{fmtBRL(bid.autoMax)}</b>
+            </span>
+          )}
           <span style={{ color: "var(--text-mute)" }}>
             Lance atual <b style={{ fontFamily: "var(--mono)", color: "var(--text)", fontWeight: 600 }}>{fmtBRL(lot.currentBid)}</b>
           </span>
           {status !== "won" && status !== "lost" && status !== "canceled" && (
             <span style={{ color: "var(--text-mute)", display: "inline-flex", gap: 6, alignItems: "center" }}>
               Encerra em <Countdown endsAt={lot.endsAt} compact />
+              <SeloProrrogado lot={lot} />
             </span>
           )}
         </div>

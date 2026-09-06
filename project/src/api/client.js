@@ -99,6 +99,8 @@ export const api = {
   registrar: (dados) => pedir("/api/v1/auth/registrar", { metodo: "POST", corpo: dados }),
   entrar: (dados) => pedir("/api/v1/auth/entrar", { metodo: "POST", corpo: dados }),
   sair: () => pedir("/api/v1/auth/sair", { metodo: "POST" }),
+  recuperar: (email) => pedir("/api/v1/auth/recuperar", { metodo: "POST", corpo: { email } }),
+  redefinir: (dados) => pedir("/api/v1/auth/redefinir", { metodo: "POST", corpo: dados }),
 
   // catálogo
   lotes: (sinal) => pedir("/api/v1/lotes", { sinal }),

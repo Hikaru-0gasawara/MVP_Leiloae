@@ -22,6 +22,7 @@ import { ErrorBoundary } from "./ui/ErrorBoundary.jsx";
 import { DemoBanner } from "./ui/DemoBanner.jsx";
 import { CarregandoCatalogo, FalhaAoCarregar } from "./ui/Estados.jsx";
 import { TelaDeEntrada } from "./ui/TelaDeEntrada.jsx";
+import { TelaDeRedefinicao } from "./ui/TelaDeRedefinicao.jsx";
 
 export default function App() {
   const [route, setRoute] = useState(() => pathToRoute(window.location.pathname));
@@ -161,6 +162,19 @@ export default function App() {
   };
 
   const renderScreen = () => {
+    // Entrar e redefinir NÃO dependem do catálogo: ficam antes dos estados de
+    // carregamento de propósito. Assim o login continua acessível com o
+    // catálogo fora do ar, e o token do link de recuperação sai da URL na
+    // primeira renderização, sem esperar por dado nenhum.
+    if (route.name === "redefinir") {
+      return <TelaDeRedefinicao acoes={acoes} aoConcluir={() => navigate("entrar")} aoVoltar={() => navigate("entrar")} />;
+    }
+    if (route.name === "entrar") {
+      return loggedIn
+        ? <NotFound onNavigate={navigate} />
+        : <TelaDeEntrada acoes={acoes} aoEntrar={() => navigate("listing")} aoVoltar={() => navigate("listing")} />;
+    }
+
     // Com servidor, o catálogo tem três estados. Sem servidor, `estado` é
     // sempre "pronto" e estes dois ramos nunca aparecem (FRONT-010).
     if (catalogo.estado === "carregando") return <CarregandoCatalogo />;
@@ -169,10 +183,6 @@ export default function App() {
     }
 
     switch (route.name) {
-      case "entrar":
-        return loggedIn
-          ? <NotFound onNavigate={navigate} />
-          : <TelaDeEntrada acoes={acoes} aoEntrar={() => navigate("listing")} aoVoltar={() => navigate("listing")} />;
       case "listing":
         return <ListingScreen onOpenLot={openLot} category={category} onCategoryChange={setCategory} onBid={openBid} onSave={saveLot} onOpenCompare={openCompare} lots={lots} />;
       case "lot":

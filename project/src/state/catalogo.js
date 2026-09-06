@@ -154,6 +154,19 @@ function useCatalogoServidor() {
         return { ok: true };
       } catch (e) { return { ok: false, erro: e }; }
     },
+    async recuperar(email) {
+      try {
+        const r = await api.recuperar(email);
+        return { ok: true, dados: r };
+      } catch (e) { return { ok: false, erro: e }; }
+    },
+    async redefinir(dados) {
+      try {
+        await api.redefinir(dados);
+        sessao.recarregar();
+        return { ok: true };
+      } catch (e) { return { ok: false, erro: e }; }
+    },
     async sair() {
       try { await api.sair(); } catch { /* já pode estar sem sessão */ }
       sessao.definir({ usuario: null });

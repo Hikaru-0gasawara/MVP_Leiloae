@@ -14,12 +14,51 @@
 //
 // O relógio é sempre o do servidor. O cliente não manda "agora".
 
-import { validateBid, minBidFor, isCancelable, FIRST_BID_WINDOW_MS } from "../src/domain/auction.js";
-import { linhaParaLote, novoId } from "./db.js";
+import {
+  validateBid, minBidFor, isCancelable, FIRST_BID_WINDOW_MS,
+  resolverAutomatico, encerramentoApos,
+} from "../src/domain/auction.js";
+import { linhaParaLote, novoId, registrarEvento } from "./db.js";
 
 /**
- * Registra um lance.
- * @returns {{lance: object, lote: object} | {erro: string, mensagem: string, min?: number}}
+ * Tetos vivos do lote, consolidados no maior de cada pessoa.
+ *
+ * Um lance sem teto conta como teto igual ao próprio valor: quem digitou
+ * R$ 150.000 e não pediu automático autorizou exatamente isso, e precisa
+ * entrar na disputa para não ser superado sem ter chance de responder.
+ */
+function tetosDoLote(db, loteId) {
+  return db.prepare(
+    `SELECT usuario_id AS usuarioId,
+            MAX(COALESCE(teto, valor)) AS limite,
+            MIN(criado_em)             AS desde
+       FROM lances
+      WHERE lote_id = ? AND cancelado_em IS NULL
+      GROUP BY usuario_id`
+  ).all(loteId);
+}
+
+/** Grava um lance. Não abre transação: já roda dentro de uma. */
+function inserirLance(db, { loteId, usuarioId, valor, teto, agora, cancelavelAte, automatico }) {
+  const id = novoId();
+  db.prepare(
+    `INSERT INTO lances (id, lote_id, usuario_id, valor, teto, criado_em,
+                         cancelavel_ate, cancelado_em, automatico)
+     VALUES (?,?,?,?,?,?,?,NULL,?)`
+  ).run(id, loteId, usuarioId, valor, teto ?? null, agora, cancelavelAte ?? null, automatico ? 1 : 0);
+  return {
+    id, lotId: loteId, value: valor, autoMax: teto ?? null,
+    placedAt: agora, cancelableUntil: cancelavelAte ?? null,
+    canceled: false, automatico: Boolean(automatico),
+  };
+}
+
+/**
+ * Registra um lance, resolve a disputa entre tetos e prorroga se for o caso —
+ * tudo numa transação só.
+ *
+ * @returns {{lance: any, lanceAutomatico: any|null, lote: any}
+ *           | {erro: string, mensagem: string, min?: number}}
  */
 export function darLance(db, { loteId, usuarioId, valor, teto }, agora = Date.now()) {
   /** @type {string} */ const idLote = String(loteId);
@@ -55,24 +94,67 @@ export function darLance(db, { loteId, usuarioId, valor, teto }, agora = Date.no
     ).get(usuarioId).n;
     const cancelavelAte = jaDeu === 0 ? agora + FIRST_BID_WINDOW_MS : null;
 
-    const id = novoId();
-    db.prepare(
-      `INSERT INTO lances (id, lote_id, usuario_id, valor, teto, criado_em, cancelavel_ate, cancelado_em)
-       VALUES (?,?,?,?,?,?,?,NULL)`
-    ).run(id, idLote, idUsuario, numero, tetoNumero, agora, cancelavelAte);
+    const lanceRegistrado = inserirLance(db, {
+      loteId: idLote, usuarioId: idUsuario, valor: numero, teto: tetoNumero,
+      agora, cancelavelAte, automatico: false,
+    });
+    registrarEvento(db, {
+      tipo: "lance", usuarioId: idUsuario, loteId: idLote,
+      lanceId: lanceRegistrado.id, valor: numero,
+      detalhe: tetoNumero ? { teto: tetoNumero } : undefined,
+    }, agora);
 
+    let atual = numero;
+    let quantidade = 1;
+
+    // ---- teto: a disputa entre procurações -------------------------------
+    //
+    // Resolvida AQUI DENTRO da mesma transação. Fosse depois do commit, entre
+    // um passo e outro caberia um lance de terceiro, e a interface mostraria
+    // por um instante um vencedor que já não é o vencedor.
+    const automatico = resolverAutomatico(
+      { ...lote, currentBid: atual },
+      tetosDoLote(db, idLote),
+      idUsuario // quem acabou de dar o lance lidera neste instante
+    );
+    /** @type {any} */
+    let lanceAutomatico = null;
+    if (automatico && automatico.valor > atual) {
+      lanceAutomatico = inserirLance(db, {
+        loteId: idLote, usuarioId: automatico.usuarioId, valor: automatico.valor,
+        teto: null, agora, cancelavelAte: null, automatico: true,
+      });
+      registrarEvento(db, {
+        tipo: "lance-automatico", usuarioId: automatico.usuarioId, loteId: idLote,
+        lanceId: lanceAutomatico.id, valor: automatico.valor,
+        detalhe: { disparadoPor: lanceRegistrado.id },
+      }, agora);
+      atual = automatico.valor;
+      quantidade = 2;
+    }
+
+    // ---- prorrogação -----------------------------------------------------
+    const novoFim = encerramentoApos(lote, agora);
+    if (novoFim !== lote.endsAt) {
+      registrarEvento(db, {
+        tipo: "prorrogacao", loteId: idLote,
+        detalhe: { de: lote.endsAt, para: novoFim },
+      }, agora);
+    }
 
     db.prepare(
-      "UPDATE lotes SET lance_atual = ?, lances = lances + 1, versao = versao + 1 WHERE id = ?"
-    ).run(numero, loteId);
+      `UPDATE lotes SET lance_atual = ?, lances = lances + ?, encerra_em = ?, versao = versao + 1
+        WHERE id = ?`
+    ).run(atual, quantidade, novoFim, idLote);
 
     db.exec("COMMIT");
     return {
-      lance: {
-        id, lotId: loteId, value: numero, autoMax: tetoNumero,
-        placedAt: agora, cancelableUntil: cancelavelAte, canceled: false,
+      lance: lanceRegistrado,
+      lanceAutomatico,
+      lote: {
+        ...lote, currentBid: atual, bids: lote.bids + quantidade,
+        endsAt: novoFim, versao: lote.versao + 1,
       },
-      lote: { ...lote, currentBid: numero, bids: lote.bids + 1, versao: lote.versao + 1 },
     };
   } catch (e) {
     try { db.exec("ROLLBACK"); } catch { /* transação já desfeita */ }
@@ -109,6 +191,9 @@ export function cancelarLance(db, { lanceId, usuarioId }, agora = Date.now()) {
     }
 
     db.prepare("UPDATE lances SET cancelado_em = ? WHERE id = ?").run(agora, lanceId);
+    registrarEvento(db, {
+      tipo: "cancelamento", usuarioId, loteId: linha.lote_id, lanceId, valor: linha.valor,
+    }, agora);
 
     // O lance atual do lote volta para o maior lance vivo — ou para o mínimo,
     // se o cancelado era o único. Sem isto o lote ficaria marcando um valor
@@ -148,6 +233,7 @@ export function meusLances(db, usuarioId) {
       cancelableUntil: r.cancelavel_ate,
       canceled: r.cancelado_em != null,
       canceledAt: r.cancelado_em,
+      automatico: Boolean(r.automatico),
     },
     lot: linhaParaLote({
       id: r.lote_pk, categoria: r.categoria, estatico: r.estatico,

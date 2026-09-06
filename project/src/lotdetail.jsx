@@ -5,7 +5,7 @@ import { simulateCost, isEnded, minBidFor, discountPct, referenceValueOf, format
 import { useNow } from "./lib/clock.js";
 import { usePrefersReducedMotion } from "./lib/motion.js";
 import { CONTACT, hasWhatsApp, openExternal } from "./lib/config.js";
-import { Icon, Badge, Button, Countdown, GlossaryTerm, LotPhoto } from "./components.jsx";
+import { Icon, Badge, Button, Countdown, GlossaryTerm, LotPhoto, SeloProrrogado } from "./components.jsx";
 
 // ============================================================
 // LOT DETAIL — the most important screen
@@ -157,7 +157,15 @@ export function LotDetailScreen({ lot, onBack, onBid, onSave }) {
             </div>
 
             <div style={{ display: "flex", justifyContent: "space-between", padding: "14px 0", borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)", marginBottom: 18 }}>
-              <Mini label="Encerra em" value={<Countdown endsAt={lot.endsAt} compact />} />
+              <Mini
+                label="Encerra em"
+                value={
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <Countdown endsAt={lot.endsAt} compact />
+                    <SeloProrrogado lot={lot} />
+                  </span>
+                }
+              />
               <Mini label="Lances" value={`${lot.bids}`} mono />
               <Mini label={<><GlossaryTerm term="lance mínimo">Mínimo</GlossaryTerm></>} value={fmtBRL(lot.minBid)} mono />
             </div>

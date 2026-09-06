@@ -53,6 +53,19 @@ O banco é SQLite pelo módulo embutido `node:sqlite` — **zero dependências n
 que trocar de driver seja local). Arquivo em `dados/leiloae.db`, configurável por
 `LEILOAE_DB`.
 
+### O que o servidor faz
+
+| | |
+| --- | --- |
+| **Lance transacional** | `BEGIN IMMEDIATE` + releitura do lote dentro da transação |
+| **Lance automático** | teto por procuração: o maior teto vence pagando o necessário, não o teto |
+| **Prorrogação** | lance nos últimos 2 min empurra o encerramento (anti-sniping) |
+| **Trilha de auditoria** | tabela só de inserção; cancelar não apaga o rastro |
+| **Sessão** | scrypt + cookie HttpOnly; o token vive no banco como hash |
+| **Recuperação de senha** | token de uso único que derruba todas as sessões |
+| **Limitação de taxa** | balde de fichas por cliente e perfil de rota |
+| **Eventos ao vivo** | SSE: um lance chega às outras abas na hora |
+
 Três decisões que sustentam o resto:
 
 - **O servidor usa o mesmo `src/domain/auction.js` que a interface.** Não é a regra
@@ -115,7 +128,9 @@ passa por variáveis de ambiente.
 | `src/tipos.d.ts` | `Lote` como união discriminada por categoria, e demais tipos |
 | `server/db.js` | Esquema, migração e leitura do catálogo |
 | `server/auth.js` | scrypt, sessão por cookie HttpOnly, token guardado em hash |
-| `server/bids.js` | Motor de lances transacional e janela de cancelamento |
+| `server/bids.js` | Motor de lances: transação, teto automático, prorrogação, auditoria |
+| `server/ratelimit.js` | Limitação de taxa por balde de fichas |
+| `server/email.js` | Canal de entrega de e-mail transacional (plugável) |
 | `server/routes.js` | Contrato HTTP `/api/v1` |
 | `server/index.js` | Servidor, eventos ao vivo e estáticos com os cabeçalhos reais |
 | `src/lib/config.js` | Configuração por ambiente: modo demonstração, canais de contato |
@@ -146,9 +161,13 @@ passa por variáveis de ambiente.
 | `src/data.test.js` | Invariantes do catálogo e da agenda |
 | `src/components.test.jsx` | LotCard, BidModal e Meus lances |
 | `src/simulador.test.jsx` | Soma das linhas = total nas quatro telas que simulam custo |
+| `src/domain/automatico.test.js` | Regra do teto e da prorrogação, isoladas |
 | `src/lib/telemetry.test.js` | Não envia nada sem endpoint; não carrega dado pessoal quando envia |
 | `src/api/client.test.js` | Forma do erro da API — a falha dela é invisível na tela |
 | `server/server.test.js` | Autenticação, regras no servidor, IDOR e janela de 24 h |
+| `server/automatico.test.js` | Teto, prorrogação e trilha de auditoria |
+| `server/ratelimit.test.js` | Balde de fichas, identificação do cliente e o 429 pela rede |
+| `server/recuperacao.test.js` | Token de uso único, sessões derrubadas, sem enumeração |
 | `server/api.test.js` | A API pela rede: cookie, status, IDOR rota a rota, SSE |
 | `server/concorrencia.test.js` | Rajada com conexões concorrentes de verdade |
 | `e2e/regressao-auditoria.spec.js` | Um teste por defeito da auditoria, identificado pelo ID |

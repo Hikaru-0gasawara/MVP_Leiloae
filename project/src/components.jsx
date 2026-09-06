@@ -4,7 +4,7 @@ import ReactDOM from "react-dom";
 import { GLOSSARY, VENDORS } from "./data.js";
 import {
   formatBRL as fmtBRL, formatNumber as fmtNum, timeLeft,
-  discountPct, isEnded, referenceValueOf,
+  discountPct, isEnded, referenceValueOf, foiProrrogado,
 } from "./domain/auction.js";
 import { useNow } from "./lib/clock.js";
 import { usePrefersReducedMotion, offsetFromId } from "./lib/motion.js";
@@ -82,6 +82,31 @@ export function Badge({ children, tone = "neutral", style }) {
       ...tones[tone],
       ...style,
     }}>{children}</span>
+  );
+}
+
+/**
+ * Selo de leilão prorrogado (anti-sniping).
+ *
+ * Sem isto a prorrogação seria invisível: a pessoa veria o relógio pular para
+ * trás sem explicação, exatamente o tipo de "número que não fecha" que o
+ * produto se propõe a não fazer.
+ */
+export function SeloProrrogado({ lot, tone = "warning" }) {
+  if (!foiProrrogado(lot)) return null;
+  return (
+    <Badge tone={tone} style={{ whiteSpace: "nowrap" }}>
+      <span aria-hidden="true">⏱</span> Prorrogado
+    </Badge>
+  );
+}
+
+/** Selo de lance dado pelo teto, não digitado. */
+export function SeloAutomatico() {
+  return (
+    <Badge tone="neutral" style={{ whiteSpace: "nowrap" }}>
+      <span aria-hidden="true">⚙</span> Automático
+    </Badge>
   );
 }
 
@@ -337,6 +362,7 @@ export function LotCard({ lot, onClick, onSave, onBid, density = "regular" }) {
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {ended ? <Badge tone="ended">Encerrado</Badge> : isHot(lot, now) ? <Badge tone="hot">🔥 Encerrando</Badge> : <Badge tone="dark">{lot.auctionType}</Badge>}
               <Badge tone="dark">{lot.praca}</Badge>
+              <SeloProrrogado lot={lot} tone="dark" />
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button

@@ -6,6 +6,7 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { criarServidor } from "./index.js";
+import { criarLimitador } from "./ratelimit.js";
 import { abrirBanco, semear, buscarLote } from "./db.js";
 import { scheduledEnd } from "../src/domain/schedule.js";
 import { minBidFor } from "../src/domain/auction.js";
@@ -22,7 +23,19 @@ const LOTES = () => [
 
 beforeAll(async () => {
   db = abrirBanco(":memory:");
-  servidor = criarServidor({ db, servirEstaticos: false, seguro: false });
+  // Limitador folgado: estes testes exercitam o contrato, não o limite — que
+  // tem suíte própria em ratelimit.test.js. Sem isto, criar dez contas do
+  // mesmo IP esgotaria a cota de autenticação e os erros seriam 429.
+  servidor = criarServidor({
+    db, servirEstaticos: false, seguro: false,
+    limitador: criarLimitador({
+      perfis: {
+        autenticacao: { capacidade: 1e6, recargaPorSegundo: 1e6, custo: 1 },
+        escrita: { capacidade: 1e6, recargaPorSegundo: 1e6, custo: 1 },
+        leitura: { capacidade: 1e6, recargaPorSegundo: 1e6, custo: 1 },
+      },
+    }),
+  });
   await new Promise((r) => servidor.listen(0, r));
   base = `http://localhost:${servidor.address().port}/api/v1`;
 });

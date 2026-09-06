@@ -42,6 +42,9 @@ const ESQUEMA = [
      lance_atual  INTEGER NOT NULL,
      lances       INTEGER NOT NULL DEFAULT 0,
      encerra_em   INTEGER NOT NULL,
+     -- Horário do edital. A coluna encerra_em pode ser empurrada por
+     -- prorrogação; esta não muda, e é o que permite dizer "prorrogado".
+     encerra_em_original INTEGER NOT NULL,
      versao       INTEGER NOT NULL DEFAULT 1
    )`,
   `CREATE TABLE IF NOT EXISTS lances (
@@ -52,10 +55,37 @@ const ESQUEMA = [
      teto           INTEGER,
      criado_em      INTEGER NOT NULL,
      cancelavel_ate INTEGER,
-     cancelado_em   INTEGER
+     cancelado_em   INTEGER,
+     -- 1 quando o lance foi disparado pelo teto, não digitado pela pessoa.
+     automatico     INTEGER NOT NULL DEFAULT 0
    )`,
   `CREATE INDEX IF NOT EXISTS idx_lances_lote ON lances(lote_id, valor DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_lances_usuario ON lances(usuario_id, criado_em DESC)`,
+  // Trilha de auditoria: linha por acontecimento, apenas inserção. Separada
+  // dos dados operacionais de propósito — cancelar um lance altera a tabela de
+  // lances, mas não pode apagar o registro de que ele existiu.
+  `CREATE TABLE IF NOT EXISTS eventos (
+     id         TEXT PRIMARY KEY,
+     em         INTEGER NOT NULL,
+     tipo       TEXT NOT NULL,
+     usuario_id TEXT,
+     lote_id    TEXT,
+     lance_id   TEXT,
+     valor      INTEGER,
+     detalhe    TEXT
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_eventos_lote ON eventos(lote_id, em DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_eventos_em ON eventos(em DESC)`,
+  // Recuperação de senha. Como nas sessões, guarda-se o hash do token: quem
+  // lê o banco não consegue redefinir a senha de ninguém.
+  `CREATE TABLE IF NOT EXISTS recuperacoes (
+     token_hash TEXT PRIMARY KEY,
+     usuario_id TEXT NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+     criado_em  INTEGER NOT NULL,
+     expira_em  INTEGER NOT NULL,
+     usado_em   INTEGER
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_recuperacoes_usuario ON recuperacoes(usuario_id)`,
   `CREATE TABLE IF NOT EXISTS salvos (
      usuario_id TEXT NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
      lote_id    TEXT NOT NULL REFERENCES lotes(id),
@@ -86,8 +116,9 @@ export function abrirBanco(caminho = process.env.LEILOAE_DB || "./dados/leiloae.
 export function semear(db, lotes = LOTS) {
   const existe = db.prepare("SELECT id FROM lotes WHERE id = ?");
   const inserir = db.prepare(
-    `INSERT INTO lotes (id, categoria, estatico, lance_minimo, lance_atual, lances, encerra_em, versao)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 1)`
+    `INSERT INTO lotes (id, categoria, estatico, lance_minimo, lance_atual, lances,
+                        encerra_em, encerra_em_original, versao)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`
   );
   let novos = 0;
   db.exec("BEGIN IMMEDIATE");
@@ -102,6 +133,7 @@ export function semear(db, lotes = LOTS) {
         Math.round(minBid),
         Math.round(currentBid),
         Math.round(bids || 0),
+        Math.round(endsAt),
         Math.round(endsAt)
       );
       novos++;
@@ -125,6 +157,7 @@ export function linhaParaLote(linha) {
     currentBid: linha.lance_atual,
     bids: linha.lances,
     endsAt: linha.encerra_em,
+    encerramentoOriginal: linha.encerra_em_original ?? linha.encerra_em,
     versao: linha.versao,
   };
 }
@@ -138,3 +171,35 @@ export function buscarLote(db, id) {
 }
 
 export const novoId = () => randomUUID();
+
+/**
+ * Registra um acontecimento na trilha de auditoria. Chamado de DENTRO da
+ * transação que produziu o fato, para que os dois vivam ou morram juntos.
+ *
+ * @param {any} db
+ * @param {{tipo: string, usuarioId?: string|null, loteId?: string|null,
+ *          lanceId?: string|null, valor?: number|null, detalhe?: any}} evento
+ * @param {number} [agora]
+ */
+export function registrarEvento(db, evento, agora = Date.now()) {
+  db.prepare(
+    `INSERT INTO eventos (id, em, tipo, usuario_id, lote_id, lance_id, valor, detalhe)
+     VALUES (?,?,?,?,?,?,?,?)`
+  ).run(
+    randomUUID(),
+    agora,
+    evento.tipo,
+    evento.usuarioId ?? null,
+    evento.loteId ?? null,
+    evento.lanceId ?? null,
+    evento.valor ?? null,
+    evento.detalhe === undefined ? null : JSON.stringify(evento.detalhe)
+  );
+}
+
+/** Trilha de um lote, do mais recente ao mais antigo. */
+export function eventosDoLote(db, loteId, limite = 100) {
+  return db.prepare("SELECT * FROM eventos WHERE lote_id = ? ORDER BY em DESC LIMIT ?")
+    .all(loteId, limite)
+    .map((e) => ({ ...e, detalhe: e.detalhe ? JSON.parse(e.detalhe) : null }));
+}

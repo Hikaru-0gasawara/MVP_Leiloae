@@ -31,7 +31,11 @@ export function senhaConfere(senha, salt, hashEsperado) {
 
 const hashToken = (token) => createHash("sha256").update(token).digest("hex");
 
-/** Regras mínimas de senha. Curtas demais são o vetor mais explorado. */
+/**
+ * Regras mínimas de senha. Curtas demais são o vetor mais explorado.
+ * @param {{email?: any, senha?: any, nome?: any}} dados
+ * @returns {string[]}
+ */
 export function validarCredenciais({ email, senha, nome }) {
   const erros = [];
   if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) erros.push("E-mail inválido.");
@@ -128,3 +132,82 @@ export function cookieDeSessao(token, { seguro = false, maxAge = DURACAO_SESSAO_
 
 export const cookieDeSaida = ({ seguro = false } = {}) =>
   cookieDeSessao("", { seguro, maxAge: 0 });
+
+// ---------------------------------------------------------------------------
+// Recuperação de senha
+// ---------------------------------------------------------------------------
+//
+// Três decisões que fazem a diferença entre um fluxo de recuperação e um vetor
+// de invasão:
+//
+//  · A resposta é a MESMA exista ou não a conta. Um fluxo que diz "e-mail não
+//    encontrado" entrega a lista de clientes a quem perguntar.
+//  · O token é de uso único, curto (30 min) e guardado como hash.
+//  · Redefinir a senha DERRUBA TODAS AS SESSÕES da pessoa. Sem isso, quem
+//    invadiu a conta continua dentro depois de a vítima trocar a senha —
+//    que é justamente o momento em que ela acha que resolveu.
+
+export const VALIDADE_RECUPERACAO_MS = 30 * 60 * 1000;
+
+/**
+ * Abre um pedido de recuperação. Devolve o token em claro APENAS para ser
+ * entregue pelo canal configurado — ele nunca volta na resposta HTTP.
+ *
+ * @returns {{token: string, usuario: {id: string, email: string, nome: string}} | null}
+ *          null quando não existe conta com esse e-mail (e o chamador responde
+ *          exatamente a mesma coisa que responderia se existisse).
+ */
+export function abrirRecuperacao(db, email, agora = Date.now()) {
+  const normalizado = String(email || "").trim().toLowerCase();
+  const usuario = db.prepare("SELECT id, email, nome FROM usuarios WHERE email = ?").get(normalizado);
+  if (!usuario) return null;
+
+  // Um pedido novo invalida os anteriores: dois links vivos ao mesmo tempo
+  // dobram a janela de quem interceptar um deles.
+  db.prepare("DELETE FROM recuperacoes WHERE usuario_id = ? AND usado_em IS NULL").run(usuario.id);
+
+  const token = randomBytes(32).toString("base64url");
+  db.prepare(
+    "INSERT INTO recuperacoes (token_hash, usuario_id, criado_em, expira_em, usado_em) VALUES (?,?,?,?,NULL)"
+  ).run(hashToken(token), usuario.id, agora, agora + VALIDADE_RECUPERACAO_MS);
+
+  return { token, usuario };
+}
+
+/**
+ * Consome o token e troca a senha.
+ * @returns {{ok: true, usuarioId: string} | {erro: string, mensagem: string}}
+ */
+export function redefinirSenha(db, { token, senha }, agora = Date.now()) {
+  const erros = validarCredenciais({ email: "x@y.z", senha });
+  if (erros.length) return { erro: "dados-invalidos", mensagem: erros.join(" ") };
+  if (!token) return { erro: "token-invalido", mensagem: "Link inválido ou já usado." };
+
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const linha = db.prepare("SELECT * FROM recuperacoes WHERE token_hash = ?").get(hashToken(token));
+    const valido = linha && linha.usado_em == null && linha.expira_em > agora;
+    if (!valido) {
+      db.exec("ROLLBACK");
+      return { erro: "token-invalido", mensagem: "Link inválido, expirado ou já usado." };
+    }
+
+    const { salt, hash } = hashSenha(senha);
+    db.prepare("UPDATE usuarios SET senha_hash = ?, salt = ? WHERE id = ?").run(hash, salt, linha.usuario_id);
+    db.prepare("UPDATE recuperacoes SET usado_em = ? WHERE token_hash = ?").run(agora, linha.token_hash);
+    // Todas as sessões caem — inclusive a de quem tenha invadido a conta.
+    db.prepare("DELETE FROM sessoes WHERE usuario_id = ?").run(linha.usuario_id);
+
+    db.exec("COMMIT");
+    return { ok: true, usuarioId: linha.usuario_id };
+  } catch (e) {
+    try { db.exec("ROLLBACK"); } catch { /* já desfeita */ }
+    throw e;
+  }
+}
+
+/** Remove pedidos vencidos ou já usados. */
+export function limparRecuperacoes(db, agora = Date.now()) {
+  return db.prepare("DELETE FROM recuperacoes WHERE expira_em <= ? OR usado_em IS NOT NULL")
+    .run(agora).changes;
+}

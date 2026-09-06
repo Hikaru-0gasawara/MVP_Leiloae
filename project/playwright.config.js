@@ -44,7 +44,10 @@ export default defineConfig({
       command:
         `VITE_API_URL=/ npm run build:servidor && ` +
         `LEILOAE_DB=./dados/e2e.db node -e "require('fs').rmSync('./dados/e2e.db',{force:true})" && ` +
-        `LEILOAE_DB=./dados/e2e.db PORT=${PORTA_SERVIDOR} node server/index.js`,
+        `LEILOAE_DB=./dados/e2e.db PORT=${PORTA_SERVIDOR} ` +
+        // Identidade por X-Forwarded-For: cada teste é um cliente distinto
+        // para a limitação de taxa. Ver o cabeçalho de e2e/servidor.spec.js.
+        `LEILOAE_ATRAS_DE_PROXY=1 node server/index.js`,
       port: PORTA_SERVIDOR,
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,

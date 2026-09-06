@@ -7,9 +7,12 @@
 import {
   criarUsuario, autenticar, criarSessao, usuarioDaSessao, encerrarSessao,
   lerCookie, cookieDeSessao, cookieDeSaida, COOKIE,
+  abrirRecuperacao, redefinirSenha, VALIDADE_RECUPERACAO_MS,
 } from "./auth.js";
+import { enviarEmail, mensagemDeRecuperacao, TEM_CANAL_EMAIL } from "./email.js";
 import { listarLotes, buscarLote } from "./db.js";
 import { darLance, cancelarLance, meusLances, listarSalvos, alternarSalvo } from "./bids.js";
+import { criarLimitador, identificar } from "./ratelimit.js";
 
 export const VERSAO_API = "1.0.0";
 const PREFIXO = "/api/v1";
@@ -49,7 +52,19 @@ const STATUS = {
   "lote-inexistente": 404,
   "lance-inexistente": 404,
   "no-lot": 404,
+  "excesso-de-pedidos": 429,
+  "token-invalido": 400,
+  "canal-indisponivel": 503,
 };
+
+/** Perfil de limite por rota. Ausente = leitura.
+ *  @type {Array<[RegExp, "autenticacao"|"escrita"|"leitura"]>} */
+const PERFIL_DA_ROTA = [
+  [/^\/auth\/(entrar|registrar|recuperar|redefinir)$/, "autenticacao"],
+  [/^\/lotes\/[\w-]+\/lances$/, "escrita"],
+  [/^\/lances\/[\w-]+\/cancelar$/, "escrita"],
+  [/^\/salvos\/[\w-]+$/, "escrita"],
+];
 
 /**
  * @param {import("node:http").IncomingMessage} req
@@ -77,15 +92,20 @@ export async function lerCorpo(req) {
  * @property {any} db conexão node:sqlite
  * @property {boolean} [seguro] marca o cookie como Secure (produção em https)
  * @property {(lote: any) => void} [aoMudarLote] publica o lote no fluxo ao vivo
+ * @property {boolean} [atrasDeProxy] confiar em X-Forwarded-For
+ * @property {string} [urlBase] origem pública, para montar o link de recuperação
+ * @property {any} [limitador] injetável nos testes
  */
 
 /**
  * Constrói o roteador.
  * @param {ContextoDeRotas} ctx
- * @returns {(req: import("node:http").IncomingMessage, caminho: string) => Promise<{status?: number, corpo: any, cookie?: string}|null>}
+ * @returns {(req: import("node:http").IncomingMessage, caminho: string) =>
+ *   Promise<{status?: number, corpo: any, cookie?: string, cabecalhos?: Record<string,string>}|null>}
  */
 export function criarRotas(ctx) {
   const { db } = ctx;
+  const limitador = ctx.limitador || criarLimitador();
 
   const exigirSessao = (req) => {
     const token = lerCookie(req.headers.cookie, COOKIE);
@@ -121,6 +141,50 @@ export function criarRotas(ctx) {
 
     ["POST", /^\/auth\/sair$/, (req) => {
       encerrarSessao(db, lerCookie(req.headers.cookie, COOKIE));
+      return { corpo: { ok: true }, cookie: cookieDeSaida(ctx) };
+    }],
+
+    // Pedir link de recuperação. A resposta é IDÊNTICA exista ou não a conta —
+    // um "e-mail não encontrado" entregaria a lista de clientes a quem
+    // perguntar, um por vez.
+    ["POST", /^\/auth\/recuperar$/, async (req) => {
+      if (!TEM_CANAL_EMAIL) {
+        return {
+          status: 503,
+          corpo: {
+            erro: "canal-indisponivel",
+            mensagem: "A recuperação por e-mail não está configurada neste ambiente.",
+          },
+        };
+      }
+      const { email } = await lerCorpo(req);
+      const pedido = abrirRecuperacao(db, email);
+      if (pedido) {
+        const link = `${ctx.urlBase || ""}/redefinir?token=${encodeURIComponent(pedido.token)}`;
+        const envio = await enviarEmail(mensagemDeRecuperacao({
+          nome: pedido.usuario.nome,
+          email: pedido.usuario.email,
+          link,
+          validadeMinutos: Math.round(VALIDADE_RECUPERACAO_MS / 60000),
+        }));
+        // Falha de entrega vira log, não resposta diferente: a resposta
+        // diferente é que revelaria a existência da conta.
+        if (!envio.ok) console.error("[Leiloaê] falha ao enviar recuperação:", envio.erro);
+      }
+      return {
+        corpo: {
+          ok: true,
+          mensagem: "Se existir uma conta com esse e-mail, o link de redefinição foi enviado.",
+        },
+      };
+    }],
+
+    ["POST", /^\/auth\/redefinir$/, async (req) => {
+      const { token, senha } = await lerCorpo(req);
+      const r = redefinirSenha(db, { token, senha });
+      if ("erro" in r) return { status: STATUS[r.erro] || 400, corpo: r };
+      // A senha mudou e todas as sessões caíram, inclusive a de quem estivesse
+      // dentro: quem redefiniu precisa entrar de novo, de propósito.
       return { corpo: { ok: true }, cookie: cookieDeSaida(ctx) };
     }],
 
@@ -181,6 +245,22 @@ export function criarRotas(ctx) {
   return async function despachar(req, caminho) {
     if (!caminho.startsWith(PREFIXO)) return null;
     const relativo = caminho.slice(PREFIXO.length) || "/";
+
+    // Limite ANTES de qualquer trabalho: o pedido recusado não deve custar uma
+    // consulta ao banco nem um scrypt, que é o que o atacante quer arrancar.
+    const perfil = PERFIL_DA_ROTA.find(([padrao]) => padrao.test(relativo))?.[1] || "leitura";
+    const cliente = identificar(req, { atrasDeProxy: Boolean(ctx.atrasDeProxy) });
+    const cota = limitador.consumir(cliente, perfil);
+    if (!cota.ok) {
+      return {
+        status: 429,
+        corpo: {
+          erro: "excesso-de-pedidos",
+          mensagem: "Muitos pedidos em pouco tempo. Espere um instante e tente de novo.",
+        },
+        cabecalhos: { "Retry-After": String(Math.ceil(cota.esperarMs / 1000)) },
+      };
+    }
 
     let achouCaminho = false;
     for (const [metodo, padrao, manipulador] of rotas) {

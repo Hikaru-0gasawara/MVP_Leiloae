@@ -13,7 +13,8 @@ import { extname, join, normalize, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { abrirBanco, semear } from "./db.js";
 import { criarRotas } from "./routes.js";
-import { limparSessoesExpiradas } from "./auth.js";
+import { limparSessoesExpiradas, limparRecuperacoes } from "./auth.js";
+import { criarLimitador } from "./ratelimit.js";
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), "..");
 // O build de servidor sai em dist-servidor (aponta para a API); o de
@@ -43,7 +44,8 @@ function cabecalhosSeguranca(res, { seguro }) {
 
 /**
  * Cria o servidor.
- * @param {{db?: object, servirEstaticos?: boolean, seguro?: boolean}} opcoes
+ * @param {{db?: any, servirEstaticos?: boolean, seguro?: boolean,
+ *          atrasDeProxy?: boolean, limitador?: any, urlBase?: string}} opcoes
  */
 export function criarServidor(opcoes = {}) {
   const db = opcoes.db || abrirBanco();
@@ -62,9 +64,13 @@ export function criarServidor(opcoes = {}) {
     }
   };
 
+  const limitador = opcoes.limitador || criarLimitador();
   const despachar = criarRotas({
     db,
     seguro,
+    atrasDeProxy: opcoes.atrasDeProxy ?? process.env.LEILOAE_ATRAS_DE_PROXY === "1",
+    urlBase: opcoes.urlBase ?? process.env.LEILOAE_URL_BASE ?? "",
+    limitador,
     aoMudarLote: (lote) => lote && publicar("lote", lote),
   });
 
@@ -91,8 +97,9 @@ export function criarServidor(opcoes = {}) {
     try {
       const resultado = await despachar(req, caminho);
       if (resultado) {
-        const { status = 200, corpo, cookie } = resultado;
+        const { status = 200, corpo, cookie, cabecalhos } = resultado;
         if (cookie) res.setHeader("Set-Cookie", cookie);
+        for (const [k, v] of Object.entries(cabecalhos || {})) res.setHeader(k, String(v));
         res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
         res.end(JSON.stringify(corpo));
         return;
@@ -122,7 +129,25 @@ export function criarServidor(opcoes = {}) {
     res.end(await readFile(arquivo));
   });
 
-  servidor.on("close", () => { for (const res of ouvintes) res.end(); ouvintes.clear(); });
+  // Manutenção periódica: sessões vencidas e baldes de limite parados. Sem
+  // isto as duas estruturas só crescem — a de limite, no ritmo que um atacante
+  // escolher. `unref` para não segurar o processo aberto.
+  const manutencao = setInterval(() => {
+    try {
+      limparSessoesExpiradas(db);
+      limparRecuperacoes(db);
+      limitador.limpar();
+    } catch (e) {
+      console.error("[Leiloaê] falha na manutenção periódica:", e);
+    }
+  }, 10 * 60 * 1000);
+  manutencao.unref?.();
+
+  servidor.on("close", () => {
+    clearInterval(manutencao);
+    for (const res of ouvintes) res.end();
+    ouvintes.clear();
+  });
   // Exposto para os testes inspecionarem o banco sem abrir outra conexão.
   return Object.assign(servidor, { bancoDeDados: db });
 }
