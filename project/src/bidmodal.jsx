@@ -29,6 +29,9 @@ export function BidModal({ lot, open, onClose, onConfirm, onWin, onSeeLot, onSee
   );
 }
 
+const avisar = (mensagem) =>
+  window.dispatchEvent(new CustomEvent("leiloe:toast", { detail: mensagem }));
+
 function BidFlow({ lot, onClose, onConfirm, onWin, onSeeLot, onSeeMyBids, isFirstBid, suggestedValue }) {
   const inicial = suggestedValue || minBidFor(lot);
   const [step, setStep] = useState("input");
@@ -36,6 +39,7 @@ function BidFlow({ lot, onClose, onConfirm, onWin, onSeeLot, onSeeMyBids, isFirs
   const [autoBid, setAutoBid] = useState(false);
   const [autoBidMax, setAutoBidMax] = useState(inicial + minBidFor(lot) - lot.currentBid);
   const [confirmedValue, setConfirmedValue] = useState(0);
+  const [enviando, setEnviando] = useState(false);
   const titleId = useId();
   const inputRef = useRef(null);
   const now = useNow();
@@ -44,16 +48,29 @@ function BidFlow({ lot, onClose, onConfirm, onWin, onSeeLot, onSeeMyBids, isFirs
   const check = validateBid(lot, value, now);
   const breakdown = simulateCost(value, lot.category);
 
-  const registrar = () => {
-    // Revalida no instante da confirmação: o leilão pode ter encerrado
-    // enquanto o modal estava aberto.
+  const registrar = async () => {
+    // Revalidação local no instante da confirmação: o leilão pode ter encerrado
+    // enquanto o modal estava aberto. É só um atalho — quem decide é o servidor.
     const final = validateBid(lot, value, Date.now());
     if (!final.ok) {
       setStep("input");
-      window.dispatchEvent(new CustomEvent("leiloe:toast", { detail: final.message }));
+      avisar(final.message);
       return;
     }
-    onConfirm?.({ lot, value, autoMax: autoBid ? autoBidMax : null });
+
+    setEnviando(true);
+    const resposta = await onConfirm?.({ lot, value, autoMax: autoBid ? autoBidMax : null });
+    setEnviando(false);
+
+    // Sem resposta (modo demonstração) o registro é local e sempre vale. Com
+    // servidor, `ok: false` significa recusado — e recusado NUNCA vira tela de
+    // sucesso, que era o defeito BIZ-001 reaparecendo por outra porta.
+    if (resposta && resposta.ok === false) {
+      setStep("input");
+      avisar(resposta.erro?.mensagem || "Não foi possível registrar o lance.");
+      return;
+    }
+
     setConfirmedValue(value);
     setStep("success");
   };
@@ -77,7 +94,7 @@ function BidFlow({ lot, onClose, onConfirm, onWin, onSeeLot, onSeeMyBids, isFirs
         <BidConfirmStep
           lot={lot} titleId={titleId} value={value} breakdown={breakdown}
           autoBid={autoBid} autoBidMax={autoBidMax} isFirstBid={isFirstBid}
-          onBack={() => setStep("input")} onConfirm={registrar} onClose={onClose}
+          onBack={() => setStep("input")} onConfirm={registrar} onClose={onClose} enviando={enviando}
         />
       ) : (
         <BidSuccessStep
@@ -296,7 +313,7 @@ function CostRow({ label, value }) {
   );
 }
 
-function BidConfirmStep({ lot, titleId, value, breakdown, autoBid, autoBidMax, isFirstBid, onBack, onConfirm, onClose }) {
+function BidConfirmStep({ lot, titleId, value, breakdown, autoBid, autoBidMax, isFirstBid, onBack, onConfirm, onClose, enviando }) {
   const [agree, setAgree] = useState(false);
   const agreeId = useId();
   return (
@@ -357,7 +374,9 @@ function BidConfirmStep({ lot, titleId, value, breakdown, autoBid, autoBidMax, i
 
       <div style={{ padding: "16px 26px 26px", display: "flex", gap: 10 }}>
         <Button variant="ghost" onClick={onBack} icon={<Icon.arrowL />}>Voltar</Button>
-        <Button variant="primary" full disabled={!agree} onClick={onConfirm}>Confirmar lance</Button>
+        <Button variant="primary" full disabled={!agree || enviando} onClick={onConfirm}>
+          {enviando ? "Registrando…" : "Confirmar lance"}
+        </Button>
       </div>
     </div>
   );

@@ -80,5 +80,6 @@ export function installTelemetry() {
   instalado = true;
   window.addEventListener("error", (e) => reportError(e.error || e.message, { origem: "window.error" }));
   window.addEventListener("unhandledrejection", (e) => reportError(e.reason, { origem: "unhandledrejection" }));
-  window.addEventListener("leiloae:error", (e) => reportError(e.detail?.error, { origem: "error-boundary" }));
+  window.addEventListener("leiloae:error", (/** @type {CustomEventInit} */ e) =>
+    reportError(e.detail?.error, { origem: "error-boundary" }));
 }

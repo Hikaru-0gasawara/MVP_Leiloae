@@ -14,3 +14,5 @@ coverage
 
 # Fotos baixadas por scripts/baixar-fotos.mjs (não versionadas)
 public/fotos
+dados
+dist-servidor

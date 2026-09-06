@@ -3,9 +3,19 @@
 "Leilão sem juridiquês" — marketplace de leilões de imóveis e veículos em São Paulo,
 feito para quem nunca participou de um leilão.
 
-React + Vite. **Não há back-end**: o catálogo é estático (`src/data.js`) e o estado do
-usuário (favoritos e lances) vive no `localStorage` do navegador. Enquanto for assim,
-a aplicação roda em **modo demonstração** — veja abaixo.
+React + Vite no cliente, Node + SQLite no servidor. A aplicação roda em **dois modos**,
+e os dois são exercitados pelos testes:
+
+| | Demonstração (padrão) | Servidor |
+| --- | --- | --- |
+| Ligado por | `VITE_API_URL` vazio | `VITE_API_URL=/` |
+| Catálogo | `src/data.js`, estático | banco, via `/api/v1/lotes` |
+| Lances e favoritos | `localStorage` | conta no servidor, com transação |
+| Conta | persona fictícia | e-mail e senha de verdade |
+| Publicável sem back-end | sim | não |
+
+As telas são as mesmas: `src/state/catalogo.js` entrega a mesma interface nos dois
+casos, então nenhuma tela sabe qual está rodando.
 
 ## Rodando
 
@@ -15,15 +25,44 @@ npm run dev       # servidor de desenvolvimento
 npm run build     # build de produção em dist/
 npm run preview   # serve o build
 
+npm run servidor     # sobe a API + serve o build (porta 3000)
+npm run dev:servidor # build apontando para a API e sobe o servidor
+
 npm run lint         # ESLint (react-hooks + jsx-a11y)
+npm run typecheck    # tsc --checkJs sobre domínio, bibliotecas e servidor
 npm test             # Vitest (unidade e componente)
 npm run test:e2e     # Playwright (regressão, acessibilidade e CSP)
-npm run check        # lint + test + build
+npm run check        # lint + typecheck + test + build
 npm run fotos:baixar # baixa as fotos para public/fotos (ver abaixo)
 ```
 
 O CI (`.github/workflows/ci.yml`) roda lint, testes, `npm audit` e build em todo push
 e pull request, mais a suíte E2E num job separado.
+
+## Servidor
+
+```bash
+VITE_API_URL=/ npm run build:servidor
+npm run servidor          # http://localhost:3000, API em /api/v1
+```
+
+O contrato está em [`docs/api.md`](docs/api.md), versionado em `/api/v1`.
+
+O banco é SQLite pelo módulo embutido `node:sqlite` — **zero dependências novas**
+(experimental no Node 22; o acesso está isolado em `server/db.js` justamente para
+que trocar de driver seja local). Arquivo em `dados/leiloae.db`, configurável por
+`LEILOAE_DB`.
+
+Três decisões que sustentam o resto:
+
+- **O servidor usa o mesmo `src/domain/auction.js` que a interface.** Não é a regra
+  reimplementada: é a mesma função. Divergência entre o que o botão habilita e o que
+  o servidor aceita é impossível por construção (SEC-004).
+- **O lance roda em `BEGIN IMMEDIATE` e relê o lote de dentro da transação.** Numa
+  rajada de lances iguais, exatamente um entra. Há teste com contenção real entre
+  conexões, e ele foi verificado sabotando a transação de propósito.
+- **Quem está falando vem sempre da sessão**, nunca do corpo ou da URL. Pedir pelo
+  recurso de outra pessoa devolve 404 (SEC-003/004).
 
 ## Modo demonstração
 
@@ -70,6 +109,15 @@ passa por variáveis de ambiente.
 | `src/lib/clock.js` | Relógio único da aplicação (`useNow`) e visibilidade da aba (`usePageVisible`) |
 | `src/lib/motion.js` | Preferência de movimento do sistema e escalonamento de animações derivadas do relógio |
 | `src/lib/telemetry.js` | Relato de erro e eventos de funil, por endpoint configurável — sem SDK de terceiro |
+| `src/api/client.js` | Cliente HTTP e `ErroDaApi`; assinatura do fluxo de eventos |
+| `src/api/resource.js` | `useResource`/`useMutation`: carregando, erro, recarregar |
+| `src/state/catalogo.js` | A mesma interface para os dois modos (com e sem servidor) |
+| `src/tipos.d.ts` | `Lote` como união discriminada por categoria, e demais tipos |
+| `server/db.js` | Esquema, migração e leitura do catálogo |
+| `server/auth.js` | scrypt, sessão por cookie HttpOnly, token guardado em hash |
+| `server/bids.js` | Motor de lances transacional e janela de cancelamento |
+| `server/routes.js` | Contrato HTTP `/api/v1` |
+| `server/index.js` | Servidor, eventos ao vivo e estáticos com os cabeçalhos reais |
 | `src/lib/config.js` | Configuração por ambiente: modo demonstração, canais de contato |
 | `src/lib/photos.js` | `srcset`/`sizes` por contexto de uso e texto alternativo das fotos |
 | `src/lib/router.js` | Mapeamento rota ↔ URL (deep link e histórico do navegador) |
@@ -99,9 +147,14 @@ passa por variáveis de ambiente.
 | `src/components.test.jsx` | LotCard, BidModal e Meus lances |
 | `src/simulador.test.jsx` | Soma das linhas = total nas quatro telas que simulam custo |
 | `src/lib/telemetry.test.js` | Não envia nada sem endpoint; não carrega dado pessoal quando envia |
+| `src/api/client.test.js` | Forma do erro da API — a falha dela é invisível na tela |
+| `server/server.test.js` | Autenticação, regras no servidor, IDOR e janela de 24 h |
+| `server/api.test.js` | A API pela rede: cookie, status, IDOR rota a rota, SSE |
+| `server/concorrencia.test.js` | Rajada com conexões concorrentes de verdade |
 | `e2e/regressao-auditoria.spec.js` | Um teste por defeito da auditoria, identificado pelo ID |
 | `e2e/acessibilidade.spec.js` | `axe-core` em 9 rotas × 2 temas × 2 instantes + os 5 overlays; dispensa por teclado |
 | `e2e/csp.spec.js` | Serve o build com os cabeçalhos reais e verifica que a CSP não bloqueia nada |
+| `e2e/servidor.spec.js` | Fluxo completo contra o servidor: conta, lance, cancelamento, IDOR |
 
 A suíte de acessibilidade reprova o build em qualquer violação `serious` ou `critical`, e
 varre cada rota em dois instantes do ciclo do leilão — o selo "encerrando" só existe na

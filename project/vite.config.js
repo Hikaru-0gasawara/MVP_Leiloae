@@ -14,10 +14,28 @@ export default defineConfig({
     assetsInlineLimit: (caminho) => (/\.(woff2?|ttf|otf|eot)$/i.test(caminho) ? false : undefined),
   },
   test: {
-    environment: "jsdom",
-    globals: true,
-    setupFiles: ["./src/test/setup.js"],
-    include: ["src/**/*.test.{js,jsx}"],
     restoreMocks: true,
+    // Dois ambientes: a interface roda em jsdom, o servidor em Node — ele usa
+    // node:sqlite, que não pode ser empacotado para o navegador.
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "cliente",
+          environment: "jsdom",
+          globals: true,
+          setupFiles: ["./src/test/setup.js"],
+          include: ["src/**/*.test.{js,jsx}"],
+        },
+      },
+      {
+        test: {
+          name: "servidor",
+          environment: "node",
+          globals: true,
+          include: ["server/**/*.test.js"],
+        },
+      },
+    ],
   },
 });

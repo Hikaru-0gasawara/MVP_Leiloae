@@ -1,12 +1,12 @@
 // Aplicação — rotas, estado global e composição das telas.
-import { useState, useEffect, useMemo, useReducer, useRef, useCallback } from "react";
-import { LOTS } from "./data.js";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { isEnded, minBidFor } from "./domain/auction.js";
 import { useNow } from "./lib/clock.js";
 import { IS_DEMO } from "./lib/config.js";
 import { routeToPath, pathToRoute, routeTitle } from "./lib/router.js";
 import { track, FUNIL } from "./lib/telemetry.js";
-import { userReducer, loadUserState, saveUserState, applyUserState, myBids } from "./state/userState.js";
+import { useCatalogo } from "./state/catalogo.js";
+import { TEM_SERVIDOR } from "./api/client.js";
 import { compareStore } from "./state/compareStore.js";
 import { NavB, NotificationsPanel } from "./nav.jsx";
 import { Footer, PageScreen } from "./pages.jsx";
@@ -20,6 +20,8 @@ import { BidModal } from "./bidmodal.jsx";
 import { CompareBar, CompareModal } from "./compare.jsx";
 import { ErrorBoundary } from "./ui/ErrorBoundary.jsx";
 import { DemoBanner } from "./ui/DemoBanner.jsx";
+import { CarregandoCatalogo, FalhaAoCarregar } from "./ui/Estados.jsx";
+import { TelaDeEntrada } from "./ui/TelaDeEntrada.jsx";
 
 export default function App() {
   const [route, setRoute] = useState(() => pathToRoute(window.location.pathname));
@@ -28,22 +30,20 @@ export default function App() {
   const [bidLot, setBidLot] = useState(null);
   const [bidSuggestion, setBidSuggestion] = useState(null);
   const [notifOpen, setNotifOpen] = useState(false);
-  const [loggedIn, setLoggedIn] = useState(true);
   const [toast, setToast] = useState(null);
   const [compareOpen, setCompareOpen] = useState(false);
   const [theme, setTheme] = useState(() => {
     try { return localStorage.getItem("leiloe:theme") || "dark"; } catch { return "dark"; }
   });
-  const [userState, dispatch] = useReducer(userReducer, undefined, loadUserState);
   const toastTimer = useRef(null);
   const now = useNow();
 
-  // Catálogo com os lances e favoritos do usuário aplicados (BIZ-001, FRONT-001).
-  const lots = useMemo(() => applyUserState(LOTS, userState), [userState]);
-  const minhasApostas = useMemo(() => myBids(userState, lots), [userState, lots]);
+  // Uma interface, duas implementações: com servidor ou em demonstração local.
+  // As telas abaixo não sabem qual está rodando (ARCH-001).
+  const catalogo = useCatalogo();
+  const { lotes: lots, meusLances: minhasApostas, sessao, acoes } = catalogo;
+  const loggedIn = Boolean(sessao.usuario);
   const currentLot = useMemo(() => lots.find((l) => l.id === route.lotId), [lots, route.lotId]);
-
-  useEffect(() => { saveUserState(userState); }, [userState]);
 
   // Tema
   useEffect(() => {
@@ -104,19 +104,32 @@ export default function App() {
 
   const closeBid = () => { setBidLot(null); setBidSuggestion(null); };
 
-  const confirmBid = ({ lot, value, autoMax }) => {
+  /**
+   * Confirma o lance. Em modo servidor a decisão é DELE: aqui só se envia e se
+   * relata o que voltou. Uma recusa (superado, encerrado, sem sessão) nunca
+   * vira sucesso na tela — era exatamente o defeito BIZ-001/SEC-004.
+   * @returns {Promise<{ok: boolean, erro?: Error}>}
+   */
+  const confirmBid = async ({ lot, value, autoMax }) => {
     // Só identificador e número: nada do que a pessoa digitou sai daqui.
     track(FUNIL.confirmarLance, { lote: lot.id, categoria: lot.category, valor: value, teto: autoMax || null });
-    dispatch({ type: "place-bid", lot, value, autoMax, now: Date.now() });
+    const r = await acoes.darLance({ lote: lot, valor: value, teto: autoMax });
+    if (!r.ok) notify(r.erro?.mensagem || "Não foi possível registrar o lance.");
+    return r;
   };
 
-  const cancelBid = (bidId) => {
+  const cancelBid = async (bidId) => {
     track(FUNIL.cancelarLance, {});
-    dispatch({ type: "cancel-bid", bidId, now: Date.now() });
-    notify("Lance cancelado dentro da janela de 24h.");
+    const r = await acoes.cancelarLance(bidId);
+    notify(r.ok ? "Lance cancelado dentro da janela de 24h." : (r.erro?.mensagem || "Não foi possível cancelar."));
+    return r;
   };
 
-  const saveLot = (lot) => dispatch({ type: "toggle-save", lotId: lot.id });
+  const saveLot = async (lot) => {
+    const r = await acoes.alternarSalvo(lot);
+    if (!r.ok) notify(r.erro?.precisaEntrar ? "Entre na sua conta para salvar lotes." : "Não foi possível salvar.");
+    return r;
+  };
 
   const onSimulateWin = (lot) => {
     track(FUNIL.arremate, { lote: lot.id, categoria: lot.category });
@@ -124,8 +137,13 @@ export default function App() {
     navigate("win", lot.id);
   };
 
-  const onSignOut = () => { setLoggedIn(false); navigate("home"); notify("Você saiu da sua conta"); };
-  const onSignIn = () => { setLoggedIn(true); notify("Bem-vinda de volta, Camila"); };
+  const onSignOut = async () => {
+    await acoes.sair?.();
+    navigate("home");
+    notify("Você saiu da sua conta");
+  };
+  // Sem servidor não existe conta: o botão leva ao aviso de demonstração.
+  const onSignIn = () => (TEM_SERVIDOR ? navigate("entrar") : notify("Modo demonstração: a conta é fictícia."));
 
   const openCompare = () => {
     if (compareStore.ids.length >= 2) setCompareOpen(true);
@@ -143,7 +161,18 @@ export default function App() {
   };
 
   const renderScreen = () => {
+    // Com servidor, o catálogo tem três estados. Sem servidor, `estado` é
+    // sempre "pronto" e estes dois ramos nunca aparecem (FRONT-010).
+    if (catalogo.estado === "carregando") return <CarregandoCatalogo />;
+    if (catalogo.estado === "erro") {
+      return <FalhaAoCarregar erro={catalogo.erro} aoTentarDeNovo={catalogo.recarregar} />;
+    }
+
     switch (route.name) {
+      case "entrar":
+        return loggedIn
+          ? <NotFound onNavigate={navigate} />
+          : <TelaDeEntrada acoes={acoes} aoEntrar={() => navigate("listing")} aoVoltar={() => navigate("listing")} />;
       case "listing":
         return <ListingScreen onOpenLot={openLot} category={category} onCategoryChange={setCategory} onBid={openBid} onSave={saveLot} onOpenCompare={openCompare} lots={lots} />;
       case "lot":
@@ -175,7 +204,7 @@ export default function App() {
     }
   };
 
-  const primeiroLance = userState.bids.filter((b) => !b.canceled).length === 0;
+  const primeiroLance = minhasApostas.filter((e) => !e.bid.canceled).length === 0;
 
   return (
     <>

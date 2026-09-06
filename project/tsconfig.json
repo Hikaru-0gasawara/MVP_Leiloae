@@ -1,0 +1,36 @@
+{
+  "//": [
+    "Verificação de tipos INCREMENTAL (ARCH-007).",
+    "",
+    "Nada é reescrito em TypeScript: `checkJs` valida os arquivos .js pelo que",
+    "o JSDoc declara. O escopo começa pelo núcleo lógico — domínio, servidor,",
+    "estado e bibliotecas —, que é onde moram as regras e onde um campo errado",
+    "vira prejuízo. As telas .jsx entram depois, ampliando `include`.",
+    "",
+    "`npm run typecheck` roda isto; o CI o executa junto com o lint."
+  ],
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": true,
+    "noImplicitAny": false,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "types": ["vite/client", "node"]
+  },
+  "include": [
+    "src/tipos.d.ts",
+    "src/domain/**/*.js",
+    "src/lib/**/*.js",
+    "src/api/**/*.js",
+    "server/**/*.js"
+  ],
+  "exclude": ["**/*.test.js", "**/*.test.jsx", "node_modules", "dist", "dist-servidor"]
+}

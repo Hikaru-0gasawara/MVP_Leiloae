@@ -28,7 +28,10 @@ jobs:
       - name: Lint (inclui regras de acessibilidade)
         run: npm run lint
 
-      - name: Testes unitários e de componente
+      - name: Verificação de tipos (domínio, bibliotecas e servidor)
+        run: npm run typecheck
+
+      - name: Testes de unidade, componente e servidor
         run: npm test
 
       - name: Auditoria de dependências
@@ -62,7 +65,10 @@ jobs:
       - name: Instalar navegador do Playwright
         run: npx playwright install --with-deps chromium
 
-      - name: Rodar E2E
+      # Roda os dois projetos: modo demonstração (sem back-end) e modo
+      # servidor (build contra a API + banco descartável). Os dois precisam
+      # continuar funcionando.
+      - name: Rodar E2E (demonstração e servidor)
         run: npm run test:e2e
 
       - name: Publicar relatório em caso de falha

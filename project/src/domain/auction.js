@@ -103,7 +103,7 @@ export function discountPct(lot) {
  * Valida um lance. Única porta de entrada: usada pelo modal para habilitar o
  * botão e pelo redutor de estado antes de registrar (defesa em profundidade).
  *
- * @returns {{ok: boolean, reason?: string, message?: string}}
+ * @returns {import("../tipos.js").ResultadoValidacao}
  */
 export function validateBid(lot, value, now = Date.now()) {
   if (!lot) return { ok: false, reason: "no-lot", message: "Lote não encontrado." };

@@ -10,6 +10,7 @@ import { useSyncExternalStore } from "react";
 const TICK_MS = 1000;
 
 let now = Date.now();
+/** @type {ReturnType<typeof setInterval>|null} */
 let timer = null;
 const listeners = new Set();
 

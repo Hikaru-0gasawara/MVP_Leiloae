@@ -27,6 +27,7 @@ const SIMPLE = {
   profile: "/conta/meus-dados",
   history: "/conta/historico",
   messages: "/conta/mensagens",
+  entrar: "/entrar",
   payments: "/conta/pagamentos",
   settings: "/conta/configuracoes",
 };
@@ -70,6 +71,7 @@ export function routeTitle(route, lot) {
     case "profile": return `Meus dados · ${base}`;
     case "history": return `Histórico · ${base}`;
     case "messages": return `Mensagens · ${base}`;
+    case "entrar": return `Entrar · ${base}`;
     case "payments": return `Pagamentos · ${base}`;
     case "settings": return `Configurações · ${base}`;
     case "page": return `${base}`;
